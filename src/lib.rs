@@ -2,42 +2,56 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moka::sync::Cache;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 #[pyclass]
-struct Moka(Arc<Cache<String, String>>);
+struct Moka(Arc<Cache<String, Arc<Py<PyAny>>>>);
 
 #[pymethods]
 impl Moka {
     #[new]
-    fn new(capacity: u64, ttl_seconds: Option<u64>, tti_seconds: Option<u64>) -> Self {
+    #[pyo3(signature = (capacity, ttl=None, tti=None))]
+    fn new(capacity: u64, ttl: Option<f64>, tti: Option<f64>) -> PyResult<Self> {
         let mut builder = Cache::builder().max_capacity(capacity);
 
-        if let Some(ttl) = ttl_seconds {
-            builder = builder.time_to_live(Duration::from_secs(ttl))
+        if let Some(ttl) = ttl {
+            let ttl_micros = (ttl * 1000_000.0) as u64;
+            if ttl_micros == 0 {
+                return Err(PyValueError::new_err("ttl must be positive"));
+            }
+            builder = builder.time_to_live(Duration::from_micros(ttl_micros));
         }
 
-        if let Some(tti) = tti_seconds {
-            builder = builder.time_to_idle(Duration::from_secs(tti))
+        if let Some(tti) = tti {
+            let tti_micros = (tti * 1000_000.0) as u64;
+            if tti_micros == 0 {
+                return Err(PyValueError::new_err("tti must be positive"));
+            }
+            builder = builder.time_to_idle(Duration::from_micros(tti_micros));
         }
 
-        Moka(Arc::new(builder.build()))
+        Ok(Moka(Arc::new(builder.build())))
     }
 
-    fn insert(&self, key: String, value: String) {
-        self.0.insert(key, value);
+    fn insert(&self, py: Python, key: String, value: Py<PyAny>) {
+        self.0.insert(key, Arc::new(value.clone_ref(py)));
     }
 
-    fn get(&self, key: String) -> Option<String> {
-        self.0.get(&key)
+    fn get(&self, py: Python, key: &str) -> Option<PyObject> {
+        self.0.get(key).map(|obj| obj.clone_ref(py))
     }
 
-    fn invalidate(&self, key: String) {
-        self.0.invalidate(&key);
+    fn invalidate(&self, key: &str) {
+        self.0.invalidate(key);
     }
 
     fn clear(&self) {
         self.0.invalidate_all();
+    }
+
+    fn count(&self) -> u64 {
+        self.0.entry_count()
     }
 }
 
