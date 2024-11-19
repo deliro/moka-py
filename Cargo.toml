@@ -9,6 +9,6 @@ name = "moka_py"
 crate-type = ["cdylib"]
 
 [dependencies]
-mimalloc = "0.1.43"
+ahash = "0.8.11"
 moka = { version = "0.12.8", features = ["sync"] }
 pyo3 = "0.22.0"
