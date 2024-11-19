@@ -1,17 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use mimalloc::MiMalloc;
 use moka::sync::Cache;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
-
 #[pyclass]
-struct Moka(Arc<Cache<String, Arc<Py<PyAny>>>>);
+struct Moka(Arc<Cache<String, Arc<Py<PyAny>>, ahash::RandomState>>);
 
 #[pymethods]
 impl Moka {
@@ -36,7 +32,9 @@ impl Moka {
             builder = builder.time_to_idle(Duration::from_micros(tti_micros));
         }
 
-        Ok(Moka(Arc::new(builder.build())))
+        Ok(Moka(Arc::new(
+            builder.build_with_hasher(ahash::RandomState::default()),
+        )))
     }
 
     #[classmethod]
