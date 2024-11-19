@@ -1,10 +1,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use mimalloc::MiMalloc;
 use moka::sync::Cache;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[pyclass]
 struct Moka(Arc<Cache<String, Arc<Py<PyAny>>>>);
