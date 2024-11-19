@@ -4,6 +4,7 @@ use std::time::Duration;
 use moka::sync::Cache;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyType;
 
 #[pyclass]
 struct Moka(Arc<Cache<String, Arc<Py<PyAny>>>>);
@@ -34,7 +35,15 @@ impl Moka {
         Ok(Moka(Arc::new(builder.build())))
     }
 
-    fn insert(&self, py: Python, key: String, value: Py<PyAny>) {
+    #[classmethod]
+    fn __class_getitem__<'a>(
+        cls: &'a Bound<'a, PyType>,
+        _v: PyObject,
+    ) -> PyResult<&'a Bound<'a, PyType>> {
+        Ok(cls)
+    }
+
+    fn set(&self, py: Python, key: String, value: Py<PyAny>) {
         self.0.insert(key, Arc::new(value.clone_ref(py)));
     }
 
@@ -42,8 +51,8 @@ impl Moka {
         self.0.get(key).map(|obj| obj.clone_ref(py))
     }
 
-    fn invalidate(&self, key: &str) {
-        self.0.invalidate(key);
+    fn remove(&self, py: Python, key: &str) -> Option<PyObject> {
+        self.0.remove(key).map(|obj| obj.clone_ref(py))
     }
 
     fn clear(&self) {
