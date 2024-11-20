@@ -1,10 +1,9 @@
-import sys
-from typing import TypeVar, Optional, Generic, Hashable, Union, Callable
+from typing import TypeVar, Optional, Generic, Hashable, Union, Callable, Any
 
 
 K = TypeVar("K", bound=Hashable)
 V = TypeVar("V")
-T = TypeVar("T")
+Fn = TypeVar("Fn", bound=Callable[..., Any])
 
 
 class Moka(Generic[K, V]):
@@ -26,27 +25,11 @@ class Moka(Generic[K, V]):
     def count(self) -> int: ...
 
 
-if sys.version >= (3, 10):
-    from typing import ParamSpec, Callable
-
-
-    P = ParamSpec("P")
-
-
-    def cached(
-            maxsize: int = 128,
-            typed: bool = False,
-            *,
-            ttl: Optional[Union[int, float]] = None,
-            tti: Optional[Union[int, float]] = None,
-    ) -> Callable[[Callable[P, T]], Callable[P, T]]:
-        ...
-else:
-    def cached(
-            maxsize: int = 128,
-            typed: bool = False,
-            *,
-            ttl: Optional[Union[int, float]] = None,
-            tti: Optional[Union[int, float]] = None,
-    ) -> Callable[[Callable], Callable]:
-        ...
+def cached(
+        maxsize: int = 128,
+        typed: bool = False,
+        *,
+        ttl: Optional[Union[int, float]] = None,
+        tti: Optional[Union[int, float]] = None,
+) -> Callable[[Fn], Fn]:
+    ...
