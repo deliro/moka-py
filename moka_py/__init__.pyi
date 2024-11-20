@@ -1,5 +1,5 @@
 import sys
-from typing import TypeVar, Optional, Generic, Hashable, Union
+from typing import TypeVar, Optional, Generic, Hashable, Union, Callable
 
 
 K = TypeVar("K", bound=Hashable)
@@ -31,15 +31,22 @@ if sys.version >= (3, 10):
 
 
     P = ParamSpec("P")
-    Fn = Callable[P, T]
+
+
+    def cached(
+            maxsize: int = 128,
+            typed: bool = False,
+            *,
+            ttl: Optional[Union[int, float]] = None,
+            tti: Optional[Union[int, float]] = None,
+    ) -> Callable[[Callable[P, T]], Callable[P, T]]:
+        ...
 else:
-    Fn = Callable
-
-
-def cached(
-        maxsize: int = 128,
-        typed: bool = False,
-        *,
-        ttl: Optional[Union[int, float]] = None,
-        tti: Optional[Union[int, float]] = None,
-) -> Callable[[Fn], Fn]: ...
+    def cached(
+            maxsize: int = 128,
+            typed: bool = False,
+            *,
+            ttl: Optional[Union[int, float]] = None,
+            tti: Optional[Union[int, float]] = None,
+    ) -> Callable[[Callable], Callable]:
+        ...
