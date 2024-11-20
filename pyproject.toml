@@ -13,3 +13,16 @@ classifiers = [
 dynamic = ["version"]
 [tool.maturin]
 features = ["pyo3/extension-module"]
+
+[tool.uv]
+dev-dependencies = [
+  "pytest-asyncio>=0.24.0",
+  "pytest-benchmark>=5.1.0",
+  "pytest>=8.3.3",
+]
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules --doctest-continue-on-failure"
+doctest_optionflags = "ELLIPSIS NORMALIZE_WHITESPACE"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
