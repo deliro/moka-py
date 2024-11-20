@@ -1,13 +1,48 @@
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
 use moka::sync::Cache;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::pyclass::CompareOp;
 use pyo3::types::PyType;
 
+#[derive(Debug)]
+struct AnyKey {
+    obj: PyObject,
+    hash: isize,
+}
+
+impl AnyKey {
+    fn new(obj: PyObject) -> PyResult<Self> {
+        let hash = Python::with_gil(|py| obj.to_object(py).into_bound(py).hash())?;
+        Ok(AnyKey { obj, hash })
+    }
+}
+
+impl PartialEq for AnyKey {
+    fn eq(&self, other: &Self) -> bool {
+        Python::with_gil(|py| {
+            let lhs = self.obj.to_object(py).into_bound(py);
+            let rhs = other.obj.to_object(py).into_bound(py);
+            match lhs.rich_compare(rhs, CompareOp::Eq) {
+                Ok(v) => v.is_truthy().unwrap_or_default(),
+                Err(_) => false,
+            }
+        })
+    }
+}
+
+impl Eq for AnyKey {}
+impl Hash for AnyKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
+
 #[pyclass]
-struct Moka(Arc<Cache<String, Arc<Py<PyAny>>, ahash::RandomState>>);
+struct Moka(Arc<Cache<AnyKey, Arc<Py<PyAny>>, ahash::RandomState>>);
 
 #[pymethods]
 impl Moka {
@@ -45,16 +80,20 @@ impl Moka {
         Ok(cls)
     }
 
-    fn set(&self, py: Python, key: String, value: Py<PyAny>) {
-        self.0.insert(key, Arc::new(value.clone_ref(py)));
+    fn set(&self, py: Python, key: PyObject, value: PyObject) -> PyResult<()> {
+        let hashable_key = AnyKey::new(key)?;
+        self.0.insert(hashable_key, Arc::new(value.clone_ref(py)));
+        Ok(())
     }
 
-    fn get(&self, py: Python, key: &str) -> Option<PyObject> {
-        self.0.get(key).map(|obj| obj.clone_ref(py))
+    fn get(&self, py: Python, key: PyObject) -> PyResult<Option<PyObject>> {
+        let hashable_key = AnyKey::new(key)?;
+        Ok(self.0.get(&hashable_key).map(|obj| obj.clone_ref(py)))
     }
 
-    fn remove(&self, py: Python, key: &str) -> Option<PyObject> {
-        self.0.remove(key).map(|obj| obj.clone_ref(py))
+    fn remove(&self, py: Python, key: PyObject) -> PyResult<Option<PyObject>> {
+        let hashable_key = AnyKey::new(key)?;
+        Ok(self.0.remove(&hashable_key).map(|obj| obj.clone_ref(py)))
     }
 
     fn clear(&self) {

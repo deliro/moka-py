@@ -13,7 +13,6 @@ projects.
 - **TTI Support:** Automatically evicts entries after a configurable time-to-idle (TTI).
 - **Size-based Eviction:** Automatically removes items when the cache exceeds its size limit using the TinyLFU policy.
 - **Concurrency:** Optimized for high-performance, concurrent access in multi-threaded environments.
-- **Integration with Python:** Simplifies usage with Python-friendly APIs via `pyo3`.
 
 ## Installation
 
@@ -29,10 +28,14 @@ pip install moka-py
 from time import sleep
 from moka_py import Moka
 
-# Create a cache with a capacity of 100 entries and, TTL of 30 seconds
-# and TTI of 5.2 seconds. Entires are always removed after 30 seconds
-# and are removed after 5.2 seconds if no `get`s happened for this time
-cache: Moka[list[int]] = Moka(capacity=100, ttl=30, tti=5.2)
+
+# Create a cache with a capacity of 100 entries, with a TTL of 30 seconds
+# and a TTI of 5.2 seconds. Entries are always removed after 30 seconds
+# and are removed after 5.2 seconds if there are no `get`s happened for this time.
+# 
+# Both TTL and TTI settings are optional. In the absence of an entry, 
+# the corresponding policy will not expire it.
+cache: Moka[str, list[int]] = Moka(capacity=100, ttl=30, tti=5.2)
 
 # Insert a value.
 cache.set("key", [3, 2, 1])
@@ -43,6 +46,25 @@ assert cache.get("key") == [3, 2, 1]
 # Wait for 5.2+ seconds, and the entry will be automatically evicted.
 sleep(5.3)
 assert cache.get("key") is None
+```
+
+Moka can be used as a drop-in replacement for `@lru_cache()` with TTL + TTI support:
+
+```python
+from time import sleep
+from moka_py import cached
+
+
+@cached(maxsize=1024, ttl=10.0, tti=1.0)
+def f(x, y):
+    print("hard computations")
+    return x + y
+
+
+f(1, 2)  # calls computations
+f(1, 2)  # gets from the cache
+sleep(1.1)
+f(1, 2)  # calls computations (since TTI has passed)
 ```
 
 ## License
