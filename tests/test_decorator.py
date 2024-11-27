@@ -63,3 +63,18 @@ async def test_decorator_async():
     # A call with the same arguments occurs only once
     assert len(lst) == len(cases)
     print(lst, answers)
+
+
+def test_cache_clear():
+    calls = []
+
+    @moka_py.cached()
+    def f(x: int, y: int) -> float:
+        calls.append((x, y))
+        return x / y
+
+    f(1, 2)
+    f(1, 2)
+    f.cache_clear()
+    f(1, 2)
+    assert len(calls) == 2
