@@ -31,6 +31,7 @@ def cached(maxsize=128, typed=False, *, ttl=None, tti=None):
                 cache.set(key, value)
                 return value
 
+        inner.cache_clear = cache.clear
         return inner
 
     return dec
