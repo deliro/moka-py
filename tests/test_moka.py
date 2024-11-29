@@ -1,6 +1,6 @@
 import asyncio
-from time import monotonic
-
+from time import monotonic, sleep
+import threading
 import moka_py
 
 
@@ -53,3 +53,28 @@ def test_remove():
     moka.set("hello", "world")
     assert moka.remove("hello") == "world"
     assert moka.get("hello") is None
+
+
+def test_get_with():
+    moka = moka_py.Moka(128)
+    calls = []
+
+    def init():
+        calls.append(1)
+        sleep(0.2)
+        return "world"
+
+    def target():
+        res = moka.get_with("hello", init)
+        assert res == "world"
+
+    t1 = threading.Thread(target=target)
+    t2 = threading.Thread(target=target)
+
+    t1.start()
+    t2.start()
+
+    t1.join()
+    t2.join()
+
+    assert len(calls) == 1

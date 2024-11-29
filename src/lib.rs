@@ -19,6 +19,11 @@ impl AnyKey {
         let hash = Python::with_gil(|py| obj.to_object(py).into_bound(py).hash())?;
         Ok(AnyKey { obj, hash })
     }
+
+    fn new_with_gil(obj: PyObject, py: Python) -> PyResult<Self> {
+        let hash = obj.to_object(py).into_bound(py).hash()?;
+        Ok(AnyKey { obj, hash })
+    }
 }
 
 impl PartialEq for AnyKey {
@@ -42,7 +47,7 @@ impl Hash for AnyKey {
 }
 
 #[pyclass]
-struct Moka(Arc<Cache<AnyKey, Arc<Py<PyAny>>, ahash::RandomState>>);
+struct Moka(Arc<Cache<AnyKey, Arc<PyObject>, ahash::RandomState>>);
 
 #[pymethods]
 impl Moka {
@@ -81,27 +86,41 @@ impl Moka {
     }
 
     fn set(&self, py: Python, key: PyObject, value: PyObject) -> PyResult<()> {
-        let hashable_key = AnyKey::new(key)?;
-        self.0.insert(hashable_key, Arc::new(value.clone_ref(py)));
+        let hashable_key = AnyKey::new_with_gil(key, py)?;
+        let value = Arc::new(value.clone_ref(py));
+        py.allow_threads(|| self.0.insert(hashable_key, value));
         Ok(())
     }
 
     fn get(&self, py: Python, key: PyObject) -> PyResult<Option<PyObject>> {
-        let hashable_key = AnyKey::new(key)?;
-        Ok(self.0.get(&hashable_key).map(|obj| obj.clone_ref(py)))
+        let hashable_key = AnyKey::new_with_gil(key, py)?;
+        let value = py.allow_threads(|| self.0.get(&hashable_key));
+        Ok(value.map(|obj| obj.clone_ref(py)))
+    }
+
+    fn get_with(&self, py: Python, key: PyObject, initializer: PyObject) -> PyResult<PyObject> {
+        let hashable_key = AnyKey::new_with_gil(key, py)?;
+        py.allow_threads(|| {
+            self.0.try_get_with(hashable_key, || {
+                Python::with_gil(|py| initializer.call0(py).map(Arc::new))
+            })
+        })
+        .map(|v| v.clone_ref(py))
+        .map_err(|e| e.clone_ref(py))
     }
 
     fn remove(&self, py: Python, key: PyObject) -> PyResult<Option<PyObject>> {
-        let hashable_key = AnyKey::new(key)?;
-        Ok(self.0.remove(&hashable_key).map(|obj| obj.clone_ref(py)))
+        let hashable_key = AnyKey::new_with_gil(key, py)?;
+        let removed = py.allow_threads(|| self.0.remove(&hashable_key));
+        Ok(removed.map(|obj| obj.clone_ref(py)))
     }
 
-    fn clear(&self) {
-        self.0.invalidate_all();
+    fn clear(&self, py: Python) {
+        py.allow_threads(|| self.0.invalidate_all());
     }
 
-    fn count(&self) -> u64 {
-        self.0.entry_count()
+    fn count(&self, py: Python) -> u64 {
+        py.allow_threads(|| self.0.entry_count())
     }
 }
 

@@ -48,3 +48,15 @@ def test_bench_get_non_existent(benchmark):
         moka.get("hello")
 
     benchmark(_bench)
+
+
+def test_bench_get_with(benchmark):
+    moka = moka_py.Moka(10_000)
+
+    def init():
+        return 5
+
+    def _bench():
+        moka.get_with("hello", init)
+
+    benchmark(_bench)
