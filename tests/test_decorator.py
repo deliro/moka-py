@@ -1,4 +1,6 @@
 import asyncio
+from threading import Thread
+from time import sleep
 
 import pytest
 
@@ -62,7 +64,6 @@ async def test_decorator_async():
 
     # A call with the same arguments occurs only once
     assert len(lst) == len(cases)
-    print(lst, answers)
 
 
 def test_cache_clear():
@@ -78,3 +79,28 @@ def test_cache_clear():
     f.cache_clear()
     f(1, 2)
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize(("wait", "expected_calls"), [
+    (True, 1),
+    (False, 5)
+])
+def test_wait_concurrent(wait, expected_calls):
+    calls = []
+
+    @moka_py.cached(wait_concurrent=wait)
+    def f(x: int, y: int) -> float:
+        calls.append((x, y))
+        sleep(0.1)
+        return x / y
+
+    def target():
+        assert f(12, 3) == 4.0
+
+    threads = [Thread(target=target) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(calls) == expected_calls

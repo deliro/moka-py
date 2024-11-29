@@ -48,7 +48,7 @@ sleep(5.3)
 assert cache.get("key") is None
 ```
 
-Moka can be used as a drop-in replacement for `@lru_cache()` with TTL + TTI support:
+moka-py can be used as a drop-in replacement for `@lru_cache()` with TTL + TTI support:
 
 ```python
 from time import sleep
@@ -66,6 +66,57 @@ f(1, 2)  # gets from the cache
 sleep(1.1)
 f(1, 2)  # calls computations (since TTI has passed)
 ```
+
+moka-py can synchronize threads on keys
+
+```python
+import moka_py
+from typing import Any
+from time import sleep
+import threading
+from decimal import Decimal
+
+
+calls = []
+
+
+@moka_py.cached(ttl=5, wait_concurrent=True)
+def get_user(id_: int) -> dict[str, Any]:
+    calls.append(id_)
+    sleep(0.3)  # simulation of HTTP request
+    return {
+        "id": id_,
+        "first_name": "Jack",
+        "last_name": "Pot",
+    }
+
+
+def process_request(path: str, user_id: int) -> None:
+    user = get_user(user_id)
+    print(f"user #{user_id} came to {path}, their info is {user}")
+    ...
+
+
+def charge_money(from_user_id: int, amount: Decimal) -> None:
+    user = get_user(from_user_id)
+    print(f"charging {amount} money from user #{from_user_id} ({user['first_name']} {user['last_name']})")
+    ...
+
+
+if __name__ == '__main__':
+    request_processing = threading.Thread(target=process_request, args=("/user/info/123", 123))
+    money_charging = threading.Thread(target=charge_money, args=(123, Decimal("3.14")))
+    request_processing.start()
+    money_charging.start()
+    request_processing.join()
+    money_charging.join()
+
+    # only one call occurred. without the `wait_concurrent` option, each thread would go for an HTTP request
+    # since no cache key was set
+    assert len(calls) == 1  
+```
+
+> **_ATTENTION:_**  `wait_concurrent` is not yet supported for async functions and will throw `NotImplementedError`
 
 ## License
 
