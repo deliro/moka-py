@@ -6,43 +6,74 @@ use moka::sync::Cache;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pyclass::CompareOp;
-use pyo3::types::PyType;
+use pyo3::types::{PyString, PyType};
 
 #[derive(Debug)]
-struct AnyKey {
-    obj: PyObject,
-    hash: isize,
+enum AnyKey {
+    /// String keys are the most common. If the string is short enough,
+    /// we can get faster and more freedom from GIL by copying a string
+    /// to Rust and hashing it using `ahash` instead of calling
+    /// the standard Python hash function.
+    ///
+    /// Using this 'hack' gives ~x1.1 speed up on `.get` hits and
+    /// ~x1.15 on `.get_with` calls, but ~x0.8 slow down on `.get`s on cache misses.
+    ShortStr(String),
+
+    /// Other keys (even long Python strings) go this (slower) way
+    Other(PyObject, isize),
 }
 
 impl AnyKey {
-    fn new(obj: PyObject) -> PyResult<Self> {
-        let hash = Python::with_gil(|py| obj.to_object(py).into_bound(py).hash())?;
-        Ok(AnyKey { obj, hash })
-    }
+    const SHORT_STR: usize = 256;
 
+    #[inline]
     fn new_with_gil(obj: PyObject, py: Python) -> PyResult<Self> {
+        if let Ok(s) = obj.downcast_bound::<PyString>(py) {
+            if s.len()? <= Self::SHORT_STR {
+                return Ok(AnyKey::ShortStr(s.to_string()));
+            }
+        }
         let hash = obj.to_object(py).into_bound(py).hash()?;
-        Ok(AnyKey { obj, hash })
+        Ok(AnyKey::Other(obj, hash))
     }
 }
 
 impl PartialEq for AnyKey {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        Python::with_gil(|py| {
-            let lhs = self.obj.to_object(py).into_bound(py);
-            let rhs = other.obj.to_object(py).into_bound(py);
-            match lhs.rich_compare(rhs, CompareOp::Eq) {
-                Ok(v) => v.is_truthy().unwrap_or_default(),
-                Err(_) => false,
+        match (self, other) {
+            (AnyKey::ShortStr(lhs), AnyKey::ShortStr(rhs)) => lhs == rhs,
+
+            // It is expected that `hash` will be stable for an object. Hence, since we already
+            // know both objects' hashes, we can claim that if their hashes are different,
+            // the objects aren't equal. Only if the hashes are the same, the objects
+            // might be equal, and only in that case we raise the GIL to run Python
+            // rich comparison.
+            (AnyKey::Other(lhs, lhs_hash), AnyKey::Other(rhs, rhs_hash)) => {
+                *lhs_hash == *rhs_hash
+                    && Python::with_gil(|py| {
+                        let lhs = lhs.to_object(py).into_bound(py);
+                        let rhs = rhs.to_object(py).into_bound(py);
+                        match lhs.rich_compare(rhs, CompareOp::Eq) {
+                            Ok(v) => v.is_truthy().unwrap_or_default(),
+                            Err(_) => false,
+                        }
+                    })
             }
-        })
+
+            _ => false,
+        }
     }
 }
 
 impl Eq for AnyKey {}
 impl Hash for AnyKey {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.hash.hash(state);
+        match self {
+            AnyKey::ShortStr(s) => s.hash(state),
+            AnyKey::Other(_, hash) => hash.hash(state),
+        }
     }
 }
 
