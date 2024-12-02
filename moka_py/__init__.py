@@ -1,13 +1,16 @@
 import asyncio
 from functools import wraps, _make_key
-from .moka_py import Moka
+from .moka_py import Moka, get_version
 
 
-__all__ = ["Moka", "cached"]
+__all__ = ["Moka", "cached", "VERSION"]
+
+VERSION = get_version()
 
 
 def cached(maxsize=128, typed=False, *, ttl=None, tti=None, wait_concurrent=False):
     cache = Moka(maxsize, ttl, tti)
+    empty = object()
 
     def dec(fn):
         if asyncio.iscoroutinefunction(fn):
@@ -17,8 +20,8 @@ def cached(maxsize=128, typed=False, *, ttl=None, tti=None, wait_concurrent=Fals
             @wraps(fn)
             async def inner(*args, **kwargs):
                 key = _make_key(args, kwargs, typed)
-                maybe_value = cache.get(key)
-                if maybe_value is not None:
+                maybe_value = cache.get(key, empty)
+                if maybe_value is not empty:
                     return maybe_value
                 value = await fn(*args, **kwargs)
                 cache.set(key, value)
@@ -30,8 +33,8 @@ def cached(maxsize=128, typed=False, *, ttl=None, tti=None, wait_concurrent=Fals
                 if wait_concurrent:
                     return cache.get_with(key, lambda: fn(*args, **kwargs))
                 else:
-                    maybe_value = cache.get(key)
-                    if maybe_value is not None:
+                    maybe_value = cache.get(key, empty)
+                    if maybe_value is not empty:
                         return maybe_value
                     value = fn(*args, **kwargs)
                     cache.set(key, value)

@@ -1,6 +1,7 @@
 import asyncio
 from time import monotonic, sleep
 import threading
+
 import moka_py
 
 
@@ -78,3 +79,10 @@ def test_get_with():
     t2.join()
 
     assert len(calls) == 1
+
+
+def test_default() -> None:
+    moka = moka_py.Moka(128)
+    moka.set("hello", [1, 2, 3])
+    assert moka.get("world") is None
+    assert moka.get("world", "foo") == "foo"

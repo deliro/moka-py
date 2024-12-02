@@ -1,8 +1,9 @@
-from typing import TypeVar, Optional, Generic, Hashable, Union, Callable, Any
+from typing import TypeVar, Optional, Generic, Hashable, Union, Callable, Any, overload
 
 
 K = TypeVar("K", bound=Hashable)
 V = TypeVar("V")
+D = TypeVar("D")
 Fn = TypeVar("Fn", bound=Callable[..., Any])
 
 
@@ -16,7 +17,11 @@ class Moka(Generic[K, V]):
 
     def set(self, key: K, value: V) -> None: ...
 
-    def get(self, key: K) -> Optional[V]: ...
+    @overload
+    def get(self, key: K, default: D) -> Union[V, D]: ...
+
+    @overload
+    def get(self, key: K, default: Optional[D] = None) -> Optional[Union[V, D]]: ...
 
     def get_with(self, key: K, initializer: Callable[[], V]) -> V:
         """
