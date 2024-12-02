@@ -123,10 +123,19 @@ impl Moka {
         Ok(())
     }
 
-    fn get(&self, py: Python, key: PyObject) -> PyResult<Option<PyObject>> {
+    #[pyo3(signature = (key, default=None))]
+    fn get(
+        &self,
+        py: Python,
+        key: PyObject,
+        default: Option<PyObject>,
+    ) -> PyResult<Option<PyObject>> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
         let value = py.allow_threads(|| self.0.get(&hashable_key));
-        Ok(value.map(|obj| obj.clone_ref(py)))
+        Ok(match value.map(|obj| obj.clone_ref(py)) {
+            None => default.map(|v| v.clone_ref(py)),
+            Some(v) => Some(v),
+        })
     }
 
     fn get_with(&self, py: Python, key: PyObject, initializer: PyObject) -> PyResult<PyObject> {
@@ -155,8 +164,14 @@ impl Moka {
     }
 }
 
+#[pyfunction]
+fn get_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 #[pymodule]
 fn moka_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Moka>()?;
+    m.add_function(wrap_pyfunction!(get_version, m)?)?;
     Ok(())
 }
