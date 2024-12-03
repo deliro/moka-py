@@ -67,6 +67,26 @@ sleep(1.1)
 f(1, 2)  # calls computations (since TTI has passed)
 ```
 
+But unlike `@lru_cache()`, `@moka_py.cached()` also supports async functions:
+
+```python
+import asyncio
+from time import perf_counter
+from moka_py import cached
+
+
+@cached(maxsize=1024, ttl=10.0, tti=1.0)
+async def f(x, y):
+    print("http request happening")
+    await asyncio.sleep(2.0)
+    return x + y
+
+start = perf_counter()
+assert asyncio.run(f(5, 6)) == 11
+assert asyncio.run(f(5, 6)) == 11  # got from cache
+assert perf_counter() - start < 4.0
+```
+
 moka-py can synchronize threads on keys
 
 ```python
@@ -117,6 +137,22 @@ if __name__ == '__main__':
 ```
 
 > **_ATTENTION:_**  `wait_concurrent` is not yet supported for async functions and will throw `NotImplementedError`
+
+## Performance
+
+*Measured using MacBook Pro 2021 with Apple M1 Pro processor and 16GiB RAM*
+
+```
+------------------------------------------------------------------------------------------- benchmark: 5 tests -------------------------------------------------------------------------------------------
+Name (time in ns)                    Min                 Max                Mean             StdDev              Median                IQR            Outliers  OPS (Mops/s)            Rounds  Iterations
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+test_bench_get_non_existent     206.3389 (1.0)      208.9872 (1.0)      207.0240 (1.0)       1.1154 (4.27)     206.5119 (1.0)       0.9932 (2.73)          1;1        4.8304 (1.0)           5    10000000
+test_bench_get                  224.4981 (1.09)     229.1849 (1.10)     225.8305 (1.09)      1.9252 (7.37)     224.9832 (1.09)      1.8345 (5.05)          1;0        4.4281 (0.92)          5    10000000
+test_bench_get_with             248.2484 (1.20)     248.9123 (1.19)     248.5142 (1.20)      0.2612 (1.0)      248.5172 (1.20)      0.3634 (1.0)           2;0        4.0239 (0.83)          5     2020760
+test_bench_set_huge             676.6090 (3.28)     692.0143 (3.31)     683.5817 (3.30)      6.5151 (24.94)    684.8168 (3.32)     10.9585 (30.16)         2;0        1.4629 (0.30)          5     1000000
+test_bench_set                  723.4063 (3.51)     770.0967 (3.68)     738.1940 (3.57)     18.5167 (70.89)    733.0997 (3.55)     18.1077 (49.83)         1;0        1.3547 (0.28)          5     1000000
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+```
 
 ## License
 

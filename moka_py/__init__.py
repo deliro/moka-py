@@ -1,11 +1,11 @@
-import asyncio
-from functools import wraps, _make_key
-from .moka_py import Moka, get_version
+import asyncio as _asyncio
+from functools import wraps as _wraps, _make_key
+from .moka_py import Moka, get_version as _get_version
 
 
 __all__ = ["Moka", "cached", "VERSION"]
 
-VERSION = get_version()
+VERSION = _get_version()
 
 
 def cached(maxsize=128, typed=False, *, ttl=None, tti=None, wait_concurrent=False):
@@ -13,11 +13,11 @@ def cached(maxsize=128, typed=False, *, ttl=None, tti=None, wait_concurrent=Fals
     empty = object()
 
     def dec(fn):
-        if asyncio.iscoroutinefunction(fn):
+        if _asyncio.iscoroutinefunction(fn):
             if wait_concurrent:
                 raise NotImplementedError("wait_concurrent is not yet supported for async functions")
 
-            @wraps(fn)
+            @_wraps(fn)
             async def inner(*args, **kwargs):
                 key = _make_key(args, kwargs, typed)
                 maybe_value = cache.get(key, empty)
@@ -27,7 +27,7 @@ def cached(maxsize=128, typed=False, *, ttl=None, tti=None, wait_concurrent=Fals
                 cache.set(key, value)
                 return value
         else:
-            @wraps(fn)
+            @_wraps(fn)
             def inner(*args, **kwargs):
                 key = _make_key(args, kwargs, typed)
                 if wait_concurrent:

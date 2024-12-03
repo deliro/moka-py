@@ -86,3 +86,31 @@ def test_default() -> None:
     moka.set("hello", [1, 2, 3])
     assert moka.get("world") is None
     assert moka.get("world", "foo") == "foo"
+
+
+def test_threading() -> None:
+    moka = moka_py.Moka(128)
+
+    t1_set = threading.Event()
+    t2_set = threading.Event()
+
+    def target_1():
+        moka.set("hello", "world")
+        t1_set.set()
+        t2_set.wait(1.0)
+        assert moka.get("hello") == "foobar"
+
+    def target_2():
+        t1_set.wait(1.0)
+        assert moka.get("hello") == "world"
+        moka.set("hello", "foobar")
+        t2_set.set()
+
+    t1 = threading.Thread(target=target_1)
+    t2 = threading.Thread(target=target_2)
+
+    t1.start()
+    t2.start()
+
+    t1.join()
+    t2.join()
