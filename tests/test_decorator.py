@@ -104,3 +104,20 @@ def test_wait_concurrent(wait, expected_calls):
         t.join()
 
     assert len(calls) == expected_calls
+
+
+def test_return_none():
+    calls = []
+
+    @moka_py.cached()
+    def f(x, y):
+        calls.append((x, y))
+        if x == 5:
+            return None
+        return x * y
+
+    assert f(5, 1) is None
+    assert f(4, 2) == 8
+    assert f(5, 1) is None
+
+    assert calls == [(5, 1), (4, 2)]

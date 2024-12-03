@@ -1,11 +1,22 @@
 from itertools import cycle
-
+import pytest
 import moka_py
 
 
 def test_bench_set(benchmark):
-    moka = moka_py.Moka(100_000)
-    to_set = cycle(iter(list(range(100_000))))
+    moka = moka_py.Moka(10_000)
+    to_set = cycle(iter(range(100_000)))
+
+    def _set():
+        k = next(to_set)
+        moka.set(k, k)
+
+    benchmark(_set)
+
+
+def test_bench_set_str_key(benchmark):
+    moka = moka_py.Moka(10_000)
+    to_set = cycle(iter(map(str, range(100_000))))
 
     def _set():
         k = next(to_set)
@@ -16,7 +27,7 @@ def test_bench_set(benchmark):
 
 def test_bench_set_huge(benchmark):
     moka = moka_py.Moka(10_000)
-    to_set = cycle(iter(list(range(10_000))))
+    to_set = cycle(iter(range(100_000)))
     payload = "hello" * 100_000
 
     def _set():
@@ -26,8 +37,9 @@ def test_bench_set_huge(benchmark):
     benchmark(_set)
 
 
-def test_bench_get(benchmark):
-    moka = moka_py.Moka(10_000)
+@pytest.mark.parametrize("ttl", [None, 10.0])
+def test_bench_get(benchmark, ttl):
+    moka = moka_py.Moka(10_000, ttl=ttl)
     payload = "hello" * 100_000
     for key in range(10_000):
         moka.set(f"pretty_long_key_of_index_{key}", payload)
