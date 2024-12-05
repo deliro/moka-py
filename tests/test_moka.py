@@ -1,6 +1,7 @@
 import asyncio
-from time import monotonic, sleep
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from time import monotonic, sleep, perf_counter
 
 import moka_py
 
@@ -114,3 +115,48 @@ def test_threading() -> None:
 
     t1.join()
     t2.join()
+
+
+def test_eviction_listener():
+    evicted = []
+
+    def listener(k, v, cause):
+        evicted.append((k, v, cause))
+
+    moka = moka_py.Moka(3, eviction_listener=listener, ttl=0.1)
+    moka.set("hello", "world")
+    moka.set("hello", "REPLACED")
+    moka.remove("hello")
+    moka.set("foo", "bar")
+    for i in range(10):
+        moka.set(f"out-of-size-{i}", 123)
+    sleep(1)
+    assert moka.get("foo") is None
+    assert {cause for _, _, cause in evicted} == {"size", "explicit", "expired", "replaced"}
+
+
+def test_eviction_listener_io():
+    pool = ThreadPoolExecutor()
+    evicted = []
+    ev = threading.Event()
+
+    def slow_io(k, v, cause):
+        sleep(1)
+        evicted.append((k, v, cause))
+        ev.set()
+
+    def listener(k, v, cause):
+        pool.submit(slow_io, k, v, cause)
+
+    moka = moka_py.Moka(3, eviction_listener=listener, ttl=0.1)
+    moka.set("hello", "world")
+    sleep(0.5)
+
+    start = perf_counter()
+    moka.get("hello")
+    duration = perf_counter() - start
+    assert duration < 1.0
+
+    # wait until the thread pool add the message
+    ev.wait(2.0)
+    assert len(evicted) == 1
