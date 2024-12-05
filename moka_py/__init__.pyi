@@ -1,10 +1,11 @@
-from typing import TypeVar, Optional, Generic, Hashable, Union, Callable, Any, overload
+from typing import TypeVar, Optional, Generic, Hashable, Union, Callable, Any, overload, Literal
 
 
 K = TypeVar("K", bound=Hashable)
 V = TypeVar("V")
 D = TypeVar("D")
 Fn = TypeVar("Fn", bound=Callable[..., Any])
+Cause = Literal["explicit", "size", "expired", "replaced"]
 
 
 class Moka(Generic[K, V]):
@@ -13,6 +14,7 @@ class Moka(Generic[K, V]):
             capacity: int,
             ttl: Optional[Union[int, float]] = None,
             tti: Optional[Union[int, float]] = None,
+            eviction_listener: Optional[Callable[[K, V, Cause], None]] = None,
     ): ...
 
     def set(self, key: K, value: V) -> None: ...

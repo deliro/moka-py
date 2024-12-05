@@ -81,6 +81,7 @@ async def f(x, y):
     await asyncio.sleep(2.0)
     return x + y
 
+
 start = perf_counter()
 assert asyncio.run(f(5, 6)) == 11
 assert asyncio.run(f(5, 6)) == 11  # got from cache
@@ -137,6 +138,59 @@ if __name__ == '__main__':
 ```
 
 > **_ATTENTION:_**  `wait_concurrent` is not yet supported for async functions and will throw `NotImplementedError`
+
+## Eviction listener
+
+moka-py supports adding of an eviction listener that's called whenever a key is dropped
+from the cache for some reason. The listener must be a 3-arguments function `(key, value, cause)`. The arguments
+are passed as positional (not keyword).
+
+There are 4 reasons why a key may be dropped:
+
+1. `"expired"`: The entry's expiration timestamp has passed.
+2. `"explicit"`: The entry was manually removed by the user (`.remove()` is called).
+3. `"replaced"`: The entry itself was not actually removed, but its value was replaced by the user (`.set()` is
+   called for an existing entry).
+4. `"size"`: The entry was evicted due to size constraints.
+
+```python
+from typing import Literal
+from moka_py import Moka
+from time import sleep
+
+
+def key_evicted(
+        k: str,
+        v: list[int],
+        cause: Literal["explicit", "size", "expired", "replaced"]
+):
+    print(f"entry {k}:{v} was evicted. {cause=}")
+
+
+moka: Moka[str, list[int]] = Moka(2, eviction_listener=key_evicted, ttl=0.1)
+moka.set("hello", [1, 2, 3])
+moka.set("hello", [3, 2, 1])
+moka.set("foo", [4])
+moka.set("bar", [])
+sleep(1)
+moka.get("foo")
+
+# will print
+# entry hello:[1, 2, 3] was evicted. cause='replaced'
+# entry bar:[] was evicted. cause='size'
+# entry hello:[3, 2, 1] was evicted. cause='expired'
+# entry foo:[4] was evicted. cause='expired'
+```
+
+> **_IMPORTANT NOTES_**:
+> 1. It's not guaranteed that the listener will be called just in time. Also, the underlying `moka` doesn't use any
+     background threads or tasks, hence, the listener is never called in "background"
+> 2. The listener must never raise any kind of `Exception`. If an exception is raised, it might be raised to any of the
+     moka-py method in any of the threads that call this method.
+> 3. The listener must be fast. Since it's called only when you're interacting with `moka-py` (via `.get()` / `.set()` /
+     etc.), the listener will slow down these operations. It's terrible idea to do some sort of IO in the listener. If
+     you need so, run a `ThreadPoolExecutor` somewhere and call `.submit()` inside of the listener or commit an async
+     task via `asyncio.create_task()`
 
 ## Performance
 
