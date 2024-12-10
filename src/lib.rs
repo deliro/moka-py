@@ -38,7 +38,7 @@ impl AnyKey {
         let kind = match obj.downcast_bound::<PyString>(py) {
             Ok(s) if s.len()? <= Self::SHORT_STR => KeyKind::ShortStr(s.to_string()),
             _ => {
-                let py_hash = obj.to_object(py).into_bound(py).hash()?;
+                let py_hash = obj.bind_borrowed(py).hash()?;
                 KeyKind::Other { py_hash }
             }
         };
@@ -78,8 +78,8 @@ impl PartialEq for AnyKey {
             ) => {
                 *lhs_hash == *rhs_hash
                     && Python::with_gil(|py| {
-                        let lhs = lhs_obj.to_object(py).into_bound(py);
-                        let rhs = rhs_obj.to_object(py).into_bound(py);
+                        let lhs = lhs_obj.bind_borrowed(py);
+                        let rhs = rhs_obj.bind_borrowed(py);
                         match lhs.rich_compare(rhs, CompareOp::Eq) {
                             Ok(v) => v.is_truthy().unwrap_or_default(),
                             Err(_) => false,
@@ -113,7 +113,7 @@ fn cause_to_str(cause: RemovalCause) -> &'static str {
 }
 
 #[pyclass]
-struct Moka(Arc<Cache<AnyKey, Arc<PyObject>, ahash::RandomState>>);
+struct Moka(Cache<AnyKey, Arc<PyObject>, ahash::RandomState>);
 
 #[pymethods]
 impl Moka {
@@ -156,9 +156,9 @@ impl Moka {
             builder = builder.eviction_listener(Box::new(listen_fn));
         }
 
-        Ok(Moka(Arc::new(
+        Ok(Moka(
             builder.build_with_hasher(ahash::RandomState::default()),
-        )))
+        ))
     }
 
     #[classmethod]
@@ -171,7 +171,7 @@ impl Moka {
 
     fn set(&self, py: Python, key: PyObject, value: PyObject) -> PyResult<()> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
-        let value = Arc::new(value.clone_ref(py));
+        let value = Arc::new(value);
         py.allow_threads(|| self.0.insert(hashable_key, value));
         Ok(())
     }
@@ -185,10 +185,9 @@ impl Moka {
     ) -> PyResult<Option<PyObject>> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
         let value = py.allow_threads(|| self.0.get(&hashable_key));
-        Ok(match value.map(|obj| obj.clone_ref(py)) {
-            None => default.map(|v| v.clone_ref(py)),
-            Some(v) => Some(v),
-        })
+        Ok(value
+            .map(|v| v.clone_ref(py))
+            .or_else(|| default.map(|v| v.clone_ref(py))))
     }
 
     fn get_with(&self, py: Python, key: PyObject, initializer: PyObject) -> PyResult<PyObject> {

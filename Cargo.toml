@@ -1,6 +1,6 @@
 [package]
 name = "moka-py"
-version = "0.1.12"
+version = "0.1.13"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 ahash = "0.8.11"
 moka = { version = "0.12.8", features = ["sync"] }
-pyo3 = "0.23.2"
+pyo3 = "0.23.3"
 
 [profile.release]
 lto = true
