@@ -8,8 +8,8 @@ __all__ = ["Moka", "cached", "VERSION"]
 VERSION = _get_version()
 
 
-def cached(maxsize=128, typed=False, *, ttl=None, tti=None, wait_concurrent=False):
-    cache = Moka(maxsize, ttl, tti)
+def cached(maxsize=128, typed=False, *, ttl=None, tti=None, wait_concurrent=False, policy="tiny_lfu"):
+    cache = Moka(maxsize, ttl=ttl, tti=tti, policy=policy)
     empty = object()
 
     def dec(fn):

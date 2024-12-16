@@ -3,8 +3,9 @@ import pytest
 import moka_py
 
 
-def test_bench_set(benchmark):
-    moka = moka_py.Moka(10_000)
+@pytest.mark.parametrize("policy", ["tiny_lfu", "lru"])
+def test_bench_set(benchmark, policy):
+    moka = moka_py.Moka(10_000, policy=policy)
     to_set = cycle(iter(range(100_000)))
 
     def _set():
@@ -25,39 +26,25 @@ def test_bench_set_str_key(benchmark):
     benchmark(_set)
 
 
-def test_bench_set_huge(benchmark):
-    moka = moka_py.Moka(10_000)
-    to_set = cycle(iter(range(100_000)))
-    payload = "hello" * 100_000
+@pytest.mark.parametrize(("policy", "existent"), [
+    ("tiny_lfu", True),
+    ("tiny_lfu", False),
+    ("lru", True),
+    ("lru", False),
+])
+def test_bench_get(benchmark, policy, existent):
+    if existent:
+        needle = "pretty_long_key_of_index_5432"
+    else:
+        needle = "hello"
 
-    def _set():
-        k = next(to_set)
-        moka.set(k, payload)
-
-    benchmark(_set)
-
-
-@pytest.mark.parametrize("ttl", [None, 10.0])
-def test_bench_get(benchmark, ttl):
-    moka = moka_py.Moka(10_000, ttl=ttl)
+    moka = moka_py.Moka(10_000, policy=policy)
     payload = "hello" * 100_000
     for key in range(10_000):
         moka.set(f"pretty_long_key_of_index_{key}", payload)
 
     def _bench():
-        moka.get("pretty_long_key_of_index_5432")
-
-    benchmark(_bench)
-
-
-def test_bench_get_non_existent(benchmark):
-    moka = moka_py.Moka(10_000)
-    payload = "hello" * 100_000
-    for key in range(10_000):
-        moka.set(f"pretty_long_key_of_index_{key}", payload)
-
-    def _bench():
-        moka.get("hello")
+        moka.get(needle)
 
     benchmark(_bench)
 

@@ -1,8 +1,10 @@
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use moka::notification::RemovalCause;
+use moka::policy::EvictionPolicy;
 use moka::sync::Cache;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -31,7 +33,7 @@ struct AnyKey {
 }
 
 impl AnyKey {
-    const SHORT_STR: usize = 256;
+    const SHORT_STR: usize = 64;
 
     #[inline]
     fn new_with_gil(obj: PyObject, py: Python) -> PyResult<Self> {
@@ -112,20 +114,51 @@ fn cause_to_str(cause: RemovalCause) -> &'static str {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+enum Policy {
+    Lru,
+    TinyLfu,
+}
+
+impl FromStr for Policy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "tiny_lfu" => Ok(Policy::TinyLfu),
+            "lru" => Ok(Policy::Lru),
+            v => Err(format!("'{v}' is not valid policy")),
+        }
+    }
+}
+
+impl From<Policy> for EvictionPolicy {
+    fn from(value: Policy) -> Self {
+        match value {
+            Policy::Lru => EvictionPolicy::lru(),
+            Policy::TinyLfu => EvictionPolicy::tiny_lfu(),
+        }
+    }
+}
+
 #[pyclass]
 struct Moka(Cache<AnyKey, Arc<PyObject>, ahash::RandomState>);
 
 #[pymethods]
 impl Moka {
     #[new]
-    #[pyo3(signature = (capacity, ttl=None, tti=None, eviction_listener=None))]
+    #[pyo3(signature = (capacity, ttl=None, tti=None, eviction_listener=None, policy="tiny_lfu"))]
     fn new(
         capacity: u64,
         ttl: Option<f64>,
         tti: Option<f64>,
         eviction_listener: Option<PyObject>,
+        policy: &str,
     ) -> PyResult<Self> {
-        let mut builder = Cache::builder().max_capacity(capacity);
+        let policy = policy.parse::<Policy>().map_err(PyValueError::new_err)?;
+        let mut builder = Cache::builder()
+            .max_capacity(capacity)
+            .eviction_policy(policy.into());
 
         if let Some(ttl) = ttl {
             let ttl_micros = (ttl * 1_000_000.0) as u64;

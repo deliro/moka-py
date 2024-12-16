@@ -6,7 +6,7 @@ V = TypeVar("V")
 D = TypeVar("D")
 Fn = TypeVar("Fn", bound=Callable[..., Any])
 Cause = Literal["explicit", "size", "expired", "replaced"]
-
+Policy = Literal["tiny_lfu", "lru"]
 
 class Moka(Generic[K, V]):
     def __init__(
@@ -15,6 +15,7 @@ class Moka(Generic[K, V]):
             ttl: Optional[Union[int, float]] = None,
             tti: Optional[Union[int, float]] = None,
             eviction_listener: Optional[Callable[[K, V, Cause], None]] = None,
+            policy: Policy = "tiny_lfu",
     ): ...
 
     def set(self, key: K, value: V) -> None: ...
@@ -47,5 +48,6 @@ def cached(
         ttl: Optional[Union[int, float]] = None,
         tti: Optional[Union[int, float]] = None,
         wait_concurrent: bool = False,
+        policy: Policy = "tiny_lfu",
 ) -> Callable[[Fn], Fn]:
     ...

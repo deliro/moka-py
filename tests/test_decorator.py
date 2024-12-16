@@ -121,3 +121,21 @@ def test_return_none():
     assert f(5, 1) is None
 
     assert calls == [(5, 1), (4, 2)]
+
+@pytest.mark.parametrize(("policy", "must_fail"), [
+    (None, False),
+    ("tiny_lfu", False),
+    ("lru", False),
+    ("unknown_policy", True),
+])
+def test_policy(policy, must_fail):
+    if must_fail:
+        with pytest.raises(ValueError):
+            moka_py.cached(policy=policy)(lambda x, y: x * y)
+    else:
+        if policy is None:
+            f = moka_py.cached()(lambda x, y: x * y)
+        else:
+            f = moka_py.cached(policy=policy)(lambda x, y: x * y)
+        assert f(5, 6) == 30
+        assert f(5, 6) == 30

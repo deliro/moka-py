@@ -11,18 +11,48 @@ projects.
 - **Synchronous Cache:** Supports thread-safe, in-memory caching for Python applications.
 - **TTL Support:** Automatically evicts entries after a configurable time-to-live (TTL).
 - **TTI Support:** Automatically evicts entries after a configurable time-to-idle (TTI).
-- **Size-based Eviction:** Automatically removes items when the cache exceeds its size limit using the TinyLFU policy.
-- **Concurrency:** Optimized for high-performance, concurrent access in multi-threaded environments.
+- **Size-based Eviction:** Automatically removes items when the cache exceeds its size limit using TinyLFU or LRU
+  policy.
+- **Concurrency:** Optimized for high-performance, concurrent access in multithreaded environments.
 
 ## Installation
 
-You can install `moka-py` using `pip`:
+You can install `moka-py` using `uv`:
+
+```bash
+uv add moka-py
+```
+
+`poetry`:
+
+```bash
+poetry add moka-py
+```
+
+Or, if you still stick to `pip` for some reason:
 
 ```bash
 pip install moka-py
 ```
 
-## Quick Start
+## Table of Contents
+
+- [Installation](#installation)
+- [Features](#features)
+- [Usage](#usage)
+    - [Using moka_py.Moka](#using-moka_pymoka)
+    - [@cached decorator](#as-a-decorator)
+    - [async support](#async-support)
+    - [Do not call a function if another function is in progress](#do-not-call-a-function-if-another-function-is-in-progress)
+    - [Eviction listener](#eviction-listener)
+- [How it works](#how-it-works)
+- [Eviction policies](#eviction-policies)
+- [Performance](#performance)
+- [License](#license)
+
+## Usage
+
+### Using moka_py.Moka
 
 ```python
 from time import sleep
@@ -35,7 +65,10 @@ from moka_py import Moka
 # 
 # Both TTL and TTI settings are optional. In the absence of an entry, 
 # the corresponding policy will not expire it.
-cache: Moka[str, list[int]] = Moka(capacity=100, ttl=30, tti=5.2)
+
+# The default eviction policy is "tiny_lfu" which is optimal for most workloads,
+# but you can choose "lru" as well.
+cache: Moka[str, list[int]] = Moka(capacity=100, ttl=30, tti=5.2, policy="lru")
 
 # Insert a value.
 cache.set("key", [3, 2, 1])
@@ -47,6 +80,8 @@ assert cache.get("key") == [3, 2, 1]
 sleep(5.3)
 assert cache.get("key") is None
 ```
+
+### As a decorator
 
 moka-py can be used as a drop-in replacement for `@lru_cache()` with TTL + TTI support:
 
@@ -67,7 +102,9 @@ sleep(1.1)
 f(1, 2)  # calls computations (since TTI has passed)
 ```
 
-But unlike `@lru_cache()`, `@moka_py.cached()` also supports async functions:
+### Async support
+
+Unlike `@lru_cache()`, `@moka_py.cached()` supports async functions:
 
 ```python
 import asyncio
@@ -87,6 +124,8 @@ assert asyncio.run(f(5, 6)) == 11
 assert asyncio.run(f(5, 6)) == 11  # got from cache
 assert perf_counter() - start < 4.0
 ```
+
+### Do not call a function if another function is in progress
 
 moka-py can synchronize threads on keys
 
@@ -139,7 +178,7 @@ if __name__ == '__main__':
 
 > **_ATTENTION:_**  `wait_concurrent` is not yet supported for async functions and will throw `NotImplementedError`
 
-## Eviction listener
+### Eviction listener
 
 moka-py supports adding of an eviction listener that's called whenever a key is dropped
 from the cache for some reason. The listener must be a 3-arguments function `(key, value, cause)`. The arguments
@@ -191,6 +230,36 @@ moka.get("foo")
      etc.), the listener will slow down these operations. It's terrible idea to do some sort of IO in the listener. If
      you need so, run a `ThreadPoolExecutor` somewhere and call `.submit()` inside of the listener or commit an async
      task via `asyncio.create_task()`
+
+## How it works
+
+`Moka` object stores Python object references
+(by [`INCREF`ing](https://docs.python.org/3/c-api/refcounting.html#c.Py_INCREF) `PyObject`s) and doesn't use
+serialization or deserialization. This means you can use any Python object as a value and any Hashable object as a
+key (`Moka` calls keys' `__hash__` magic methods). But also you need to remember that mutable objects stored in `Moka`
+are still mutable:
+
+```python
+from moka_py import Moka
+c = Moka(128)
+my_list = [1, 2, 3]
+c.set("hello", my_list)
+still_the_same = c.get("hello")
+still_the_same.append(4)
+assert my_list == [1, 2, 3, 4]
+```
+
+`Moka` acquires GIL only when it is interacting with the Python interpreter (to increment or decrement Reference
+Counter,
+or to compare keys on equality, or to get an object's `__hash__`). This means that all the operations Moka performs on
+its internal state (searching, adding and deleting entries) are free from GIL, and another Python thread can operate
+during
+this time.
+
+## Eviction policies
+
+moka-py uses the TinyLFU eviction policy as default, with LRU option. You can learn more about the
+policies [here](https://github.com/moka-rs/moka/wiki#admission-and-eviction-policies)
 
 ## Performance
 
