@@ -14,6 +14,7 @@ projects.
 - **Size-based Eviction:** Automatically removes items when the cache exceeds its size limit using TinyLFU or LRU
   policy.
 - **Concurrency:** Optimized for high-performance, concurrent access in multithreaded environments.
+- **Fully typed:** `mypy` and `pyright` friendly.
 
 ## Installation
 
@@ -45,6 +46,7 @@ pip install moka-py
     - [async support](#async-support)
     - [Do not call a function if another function is in progress](#do-not-call-a-function-if-another-function-is-in-progress)
     - [Eviction listener](#eviction-listener)
+    - [Removing entries](#removing-entries)
 - [How it works](#how-it-works)
 - [Eviction policies](#eviction-policies)
 - [Performance](#performance)
@@ -231,6 +233,35 @@ moka.get("foo")
      you need so, run a `ThreadPoolExecutor` somewhere and call `.submit()` inside of the listener or commit an async
      task via `asyncio.create_task()`
 
+### Removing entries
+
+An entry can be removed using `Moka.remove(key)`. If a value was set, it is returned; otherwise, `None` is returned.
+
+```python
+from moka_py import Moka
+
+
+c = Moka(128)
+c.set("hello", "world")
+assert c.remove("hello") == "world"
+assert c.get("hello") is None
+```
+
+In some cases you may want `None`s to be a valid cache value. In this case you need to distinguish between `None` as a
+value and `None` as the absence of a value. Use `Moka.remove(key, default=...)`:
+
+```python
+from moka_py import Moka
+
+
+c = Moka(128)
+c.set("hello", None)
+assert c.remove("hello", default="WAS_NOT_SET") is None  # None is returned since is was set 
+
+# Now entry with key "hello" doesn't exist so `default` argument is returned 
+assert c.remove("hello", default="WAS_NOT_SET") == "WAS_NOT_SET" 
+```
+
 ## How it works
 
 `Moka` object stores Python object references
@@ -241,6 +272,8 @@ are still mutable:
 
 ```python
 from moka_py import Moka
+
+
 c = Moka(128)
 my_list = [1, 2, 3]
 c.set("hello", my_list)
@@ -248,13 +281,6 @@ still_the_same = c.get("hello")
 still_the_same.append(4)
 assert my_list == [1, 2, 3, 4]
 ```
-
-`Moka` acquires GIL only when it is interacting with the Python interpreter (to increment or decrement Reference
-Counter,
-or to compare keys on equality, or to get an object's `__hash__`). This means that all the operations Moka performs on
-its internal state (searching, adding and deleting entries) are free from GIL, and another Python thread can operate
-during
-this time.
 
 ## Eviction policies
 
@@ -266,15 +292,19 @@ policies [here](https://github.com/moka-rs/moka/wiki#admission-and-eviction-poli
 *Measured using MacBook Pro 2021 with Apple M1 Pro processor and 16GiB RAM*
 
 ```
-------------------------------------------------------------------------------------------- benchmark: 5 tests -------------------------------------------------------------------------------------------
-Name (time in ns)                    Min                 Max                Mean             StdDev              Median                IQR            Outliers  OPS (Mops/s)            Rounds  Iterations
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-test_bench_get_non_existent     206.3389 (1.0)      208.9872 (1.0)      207.0240 (1.0)       1.1154 (4.27)     206.5119 (1.0)       0.9932 (2.73)          1;1        4.8304 (1.0)           5    10000000
-test_bench_get                  224.4981 (1.09)     229.1849 (1.10)     225.8305 (1.09)      1.9252 (7.37)     224.9832 (1.09)      1.8345 (5.05)          1;0        4.4281 (0.92)          5    10000000
-test_bench_get_with             248.2484 (1.20)     248.9123 (1.19)     248.5142 (1.20)      0.2612 (1.0)      248.5172 (1.20)      0.3634 (1.0)           2;0        4.0239 (0.83)          5     2020760
-test_bench_set_huge             676.6090 (3.28)     692.0143 (3.31)     683.5817 (3.30)      6.5151 (24.94)    684.8168 (3.32)     10.9585 (30.16)         2;0        1.4629 (0.30)          5     1000000
-test_bench_set                  723.4063 (3.51)     770.0967 (3.68)     738.1940 (3.57)     18.5167 (70.89)    733.0997 (3.55)     18.1077 (49.83)         1;0        1.3547 (0.28)          5     1000000
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------- benchmark: 9 tests -------------------------------------------------------------------------------------------
+Name (time in ns)                       Min                 Max                Mean            StdDev              Median               IQR            Outliers  OPS (Mops/s)            Rounds  Iterations
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+test_bench_remove                  100.8775 (1.0)      108.9191 (1.0)      102.6757 (1.0)      3.4992 (34.54)    101.0640 (1.0)      2.4234 (15.49)         1;1        9.7394 (1.0)           5    10000000
+test_bench_get[lru-False]          112.8452 (1.12)     113.0924 (1.04)     112.9415 (1.10)     0.1013 (1.0)      112.9176 (1.12)     0.1565 (1.0)           1;0        8.8541 (0.91)          5    10000000
+test_bench_get[tiny_lfu-False]     135.0147 (1.34)     135.6069 (1.25)     135.2916 (1.32)     0.2246 (2.22)     135.2849 (1.34)     0.3164 (2.02)          2;0        7.3914 (0.76)          5    10000000
+test_bench_get[lru-True]           135.1628 (1.34)     135.7813 (1.25)     135.4712 (1.32)     0.2231 (2.20)     135.4765 (1.34)     0.2477 (1.58)          2;0        7.3816 (0.76)          5    10000000
+test_bench_get[tiny_lfu-True]      135.2461 (1.34)     135.6612 (1.25)     135.4463 (1.32)     0.1802 (1.78)     135.4026 (1.34)     0.3192 (2.04)          2;0        7.3830 (0.76)          5    10000000
+test_bench_get_with                290.5307 (2.88)     291.0418 (2.67)     290.8393 (2.83)     0.1893 (1.87)     290.8867 (2.88)     0.1873 (1.20)          2;0        3.4383 (0.35)          5    10000000
+test_bench_set[tiny_lfu]           515.7514 (5.11)     518.6080 (4.76)     517.4876 (5.04)     1.1196 (11.05)    517.6572 (5.12)     1.5465 (9.88)          2;0        1.9324 (0.20)          5     1912971
+test_bench_set_str_key             516.1032 (5.12)     533.7330 (4.90)     525.7461 (5.12)     6.3386 (62.57)    526.8491 (5.21)     6.1052 (39.01)         2;0        1.9021 (0.20)          5     1918471
+test_bench_set[lru]                637.3014 (6.32)     644.4533 (5.92)     640.3571 (6.24)     2.8981 (28.61)    639.8821 (6.33)     4.6131 (29.48)         2;0        1.5616 (0.16)          5     1581738
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ```
 
 ## License

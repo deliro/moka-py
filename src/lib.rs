@@ -9,87 +9,33 @@ use moka::sync::Cache;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pyclass::CompareOp;
-use pyo3::types::{PyString, PyType};
-
-#[derive(Debug)]
-enum KeyKind {
-    /// String keys are the most common. If the string is short enough,
-    /// we can get faster and more freedom from GIL by copying a string
-    /// to Rust and hashing it using `ahash` instead of calling
-    /// the standard Python hash function.
-    ///
-    /// Using this 'hack' gives ~x1.1 speed up on `.get` hits and
-    /// ~x1.15 on `.get_with` calls, but ~x0.8 slow down on `.get`s on cache misses.
-    ShortStr(String),
-
-    /// Other keys (even long Python strings) go this (slower) way
-    Other { py_hash: isize },
-}
+use pyo3::types::PyType;
 
 #[derive(Debug)]
 struct AnyKey {
     obj: PyObject,
-    kind: KeyKind,
+    py_hash: isize,
 }
 
 impl AnyKey {
-    const SHORT_STR: usize = 64;
-
     #[inline]
     fn new_with_gil(obj: PyObject, py: Python) -> PyResult<Self> {
-        let kind = match obj.downcast_bound::<PyString>(py) {
-            Ok(s) if s.len()? <= Self::SHORT_STR => KeyKind::ShortStr(s.to_string()),
-            _ => {
-                let py_hash = obj.bind_borrowed(py).hash()?;
-                KeyKind::Other { py_hash }
-            }
-        };
-        Ok(AnyKey { obj, kind })
+        let py_hash = obj.bind_borrowed(py).hash()?;
+        Ok(AnyKey { obj, py_hash })
     }
 }
 
 impl PartialEq for AnyKey {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (
-                AnyKey {
-                    kind: KeyKind::ShortStr(lhs),
-                    ..
-                },
-                AnyKey {
-                    kind: KeyKind::ShortStr(rhs),
-                    ..
-                },
-            ) => lhs == rhs,
-
-            // It is expected that `hash` will be stable for an object. Hence, since we already
-            // know both objects' hashes, we can claim that if their hashes are different,
-            // the objects aren't equal. Only if the hashes are the same, the objects
-            // might be equal, and only in that case we raise the GIL to run Python
-            // rich comparison.
-            (
-                AnyKey {
-                    kind: KeyKind::Other { py_hash: lhs_hash },
-                    obj: lhs_obj,
-                },
-                AnyKey {
-                    kind: KeyKind::Other { py_hash: rhs_hash },
-                    obj: rhs_obj,
-                },
-            ) => {
-                *lhs_hash == *rhs_hash
-                    && Python::with_gil(|py| {
-                        let lhs = lhs_obj.bind_borrowed(py);
-                        let rhs = rhs_obj.bind_borrowed(py);
-                        match lhs.rich_compare(rhs, CompareOp::Eq) {
-                            Ok(v) => v.is_truthy().unwrap_or_default(),
-                            Err(_) => false,
-                        }
-                    })
-            }
-            _ => false,
-        }
+        self.py_hash == other.py_hash
+            && Python::with_gil(|py| {
+                let lhs = self.obj.bind_borrowed(py);
+                let rhs = other.obj.bind_borrowed(py);
+                lhs.rich_compare(rhs, CompareOp::Eq)
+                    .and_then(|x| x.is_truthy())
+                    .unwrap_or_default()
+            })
     }
 }
 
@@ -97,10 +43,7 @@ impl Eq for AnyKey {}
 impl Hash for AnyKey {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        match &self.kind {
-            KeyKind::ShortStr(s) => s.hash(state),
-            KeyKind::Other { py_hash } => py_hash.hash(state),
-        }
+        self.py_hash.hash(state)
     }
 }
 
@@ -205,7 +148,7 @@ impl Moka {
     fn set(&self, py: Python, key: PyObject, value: PyObject) -> PyResult<()> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
         let value = Arc::new(value);
-        py.allow_threads(|| self.0.insert(hashable_key, value));
+        self.0.insert(hashable_key, value);
         Ok(())
     }
 
@@ -217,7 +160,11 @@ impl Moka {
         default: Option<PyObject>,
     ) -> PyResult<Option<PyObject>> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
-        let value = py.allow_threads(|| self.0.get(&hashable_key));
+        // Here we could release GIL to get some free threading, but under this `get`
+        // a lot of comparisons happen, which require to acquire GIL each time.
+        // So it's ~30% faster to keep GIL acquired all the time search happening
+        // instead of switching it on and off.
+        let value = self.0.get(&hashable_key);
         Ok(value
             .map(|v| v.clone_ref(py))
             .or_else(|| default.map(|v| v.clone_ref(py))))
@@ -234,10 +181,18 @@ impl Moka {
         .map_err(|e| e.clone_ref(py))
     }
 
-    fn remove(&self, py: Python, key: PyObject) -> PyResult<Option<PyObject>> {
+    #[pyo3(signature = (key, default=None))]
+    fn remove(
+        &self,
+        py: Python,
+        key: PyObject,
+        default: Option<PyObject>,
+    ) -> PyResult<Option<PyObject>> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
-        let removed = py.allow_threads(|| self.0.remove(&hashable_key));
-        Ok(removed.map(|obj| obj.clone_ref(py)))
+        let removed = self.0.remove(&hashable_key);
+        Ok(removed
+            .map(|v| v.clone_ref(py))
+            .or_else(|| default.map(|v| v.clone_ref(py))))
     }
 
     fn clear(&self, py: Python) {

@@ -3,6 +3,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from time import monotonic, sleep, perf_counter
 
+import pytest
+
 import moka_py
 
 
@@ -50,11 +52,35 @@ def test_eviction():
     assert len(got) == size
 
 
-def test_remove():
+_not_set = object()
+
+
+@pytest.mark.parametrize("default", [_not_set, None, "DEFAULT"])
+def test_remove(default):
     moka = moka_py.Moka(128)
     moka.set("hello", "world")
-    assert moka.remove("hello") == "world"
+
+    if default is _not_set:
+        removed = moka.remove("hello")
+    else:
+        removed = moka.remove("hello", default=default)
+
+    assert removed == "world"
     assert moka.get("hello") is None
+
+
+@pytest.mark.parametrize(("default", "expected"), [
+    (_not_set, None),
+    (None, None),
+    ("DEFAULT", "DEFAULT"),
+])
+def test_remove_default(default, expected):
+    moka = moka_py.Moka(128)
+    if default is _not_set:
+        removed = moka.remove("hello")
+    else:
+        removed = moka.remove("hello", default=default)
+    assert removed == expected
 
 
 def test_get_with():

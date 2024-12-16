@@ -8,6 +8,7 @@ Fn = TypeVar("Fn", bound=Callable[..., Any])
 Cause = Literal["explicit", "size", "expired", "replaced"]
 Policy = Literal["tiny_lfu", "lru"]
 
+
 class Moka(Generic[K, V]):
     def __init__(
             self,
@@ -34,7 +35,11 @@ class Moka(Generic[K, V]):
         `initializer`, and the others wait until the value is set.
         """
 
-    def remove(self, key: K) -> Optional[V]: ...
+    @overload
+    def remove(self, key: K, default: D) -> Union[V, D]: ...
+
+    @overload
+    def remove(self, key: K, default: Optional[D] = None) -> Optional[Union[V, D]]: ...
 
     def clear(self) -> None: ...
 

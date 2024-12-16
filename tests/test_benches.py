@@ -1,4 +1,4 @@
-from itertools import cycle
+from itertools import cycle, chain
 import pytest
 import moka_py
 
@@ -59,3 +59,16 @@ def test_bench_get_with(benchmark):
         moka.get_with("hello", init)
 
     benchmark(_bench)
+
+
+def test_bench_remove(benchmark):
+    moka = moka_py.Moka(10_000)
+    non_existent = range(100_000, 100_000 + 10_000)
+    keys = cycle(chain(range(10_000), non_existent))
+    for key in range(10_000):
+        moka.set(key, key)
+
+    def _remove():
+        moka.remove(next(keys))
+
+    benchmark(_remove)
