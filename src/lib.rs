@@ -8,7 +8,6 @@ use moka::policy::EvictionPolicy;
 use moka::sync::Cache;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::pyclass::CompareOp;
 use pyo3::types::PyType;
 
 #[derive(Debug)]
@@ -28,13 +27,14 @@ impl AnyKey {
 impl PartialEq for AnyKey {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
+        if self.obj.is(&other.obj) {
+            return true;
+        }
         self.py_hash == other.py_hash
             && Python::with_gil(|py| {
                 let lhs = self.obj.bind_borrowed(py);
                 let rhs = other.obj.bind_borrowed(py);
-                lhs.rich_compare(rhs, CompareOp::Eq)
-                    .and_then(|x| x.is_truthy())
-                    .unwrap_or_default()
+                lhs.eq(rhs).unwrap_or_default()
             })
     }
 }
@@ -43,7 +43,7 @@ impl Eq for AnyKey {}
 impl Hash for AnyKey {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.py_hash.hash(state)
+        state.write_isize(self.py_hash)
     }
 }
 

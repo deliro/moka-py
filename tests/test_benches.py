@@ -1,6 +1,10 @@
+import sys
 from itertools import cycle, chain
 import pytest
 import moka_py
+
+
+print("moka_py version:", moka_py.VERSION, file=sys.stderr)
 
 
 @pytest.mark.parametrize("policy", ["tiny_lfu", "lru"])
