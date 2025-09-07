@@ -12,13 +12,13 @@ use pyo3::types::PyType;
 
 #[derive(Debug)]
 struct AnyKey {
-    obj: PyObject,
+    obj: Py<PyAny>,
     py_hash: isize,
 }
 
 impl AnyKey {
     #[inline]
-    fn new_with_gil(obj: PyObject, py: Python) -> PyResult<Self> {
+    fn new_with_gil(obj: Py<PyAny>, py: Python) -> PyResult<Self> {
         let py_hash = obj.bind_borrowed(py).hash()?;
         Ok(AnyKey { obj, py_hash })
     }
@@ -31,7 +31,7 @@ impl PartialEq for AnyKey {
             return true;
         }
         self.py_hash == other.py_hash
-            && Python::with_gil(|py| {
+            && Python::attach(|py| {
                 let lhs = self.obj.bind_borrowed(py);
                 let rhs = other.obj.bind_borrowed(py);
                 lhs.eq(rhs).unwrap_or_default()
@@ -85,7 +85,7 @@ impl From<Policy> for EvictionPolicy {
 }
 
 #[pyclass]
-struct Moka(Cache<AnyKey, Arc<PyObject>, ahash::RandomState>);
+struct Moka(Cache<AnyKey, Arc<Py<PyAny>>, ahash::RandomState>);
 
 #[pymethods]
 impl Moka {
@@ -95,7 +95,7 @@ impl Moka {
         capacity: u64,
         ttl: Option<f64>,
         tti: Option<f64>,
-        eviction_listener: Option<PyObject>,
+        eviction_listener: Option<Py<PyAny>>,
         policy: &str,
     ) -> PyResult<Self> {
         let policy = policy.parse::<Policy>().map_err(PyValueError::new_err)?;
@@ -120,8 +120,8 @@ impl Moka {
         }
 
         if let Some(listener) = eviction_listener {
-            let listen_fn = move |k: Arc<AnyKey>, v: Arc<PyObject>, cause: RemovalCause| {
-                Python::with_gil(|py| {
+            let listen_fn = move |k: Arc<AnyKey>, v: Arc<Py<PyAny>>, cause: RemovalCause| {
+                Python::attach(|py| {
                     let key = k.as_ref().obj.clone_ref(py);
                     let value = v.as_ref().clone_ref(py);
                     if let Err(e) = listener.call1(py, (key, value, cause_to_str(cause))) {
@@ -140,12 +140,12 @@ impl Moka {
     #[classmethod]
     fn __class_getitem__<'a>(
         cls: &'a Bound<'a, PyType>,
-        _v: PyObject,
+        _v: Py<PyAny>,
     ) -> PyResult<&'a Bound<'a, PyType>> {
         Ok(cls)
     }
 
-    fn set(&self, py: Python, key: PyObject, value: PyObject) -> PyResult<()> {
+    fn set(&self, py: Python, key: Py<PyAny>, value: Py<PyAny>) -> PyResult<()> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
         let value = Arc::new(value);
         self.0.insert(hashable_key, value);
@@ -156,9 +156,9 @@ impl Moka {
     fn get(
         &self,
         py: Python,
-        key: PyObject,
-        default: Option<PyObject>,
-    ) -> PyResult<Option<PyObject>> {
+        key: Py<PyAny>,
+        default: Option<Py<PyAny>>,
+    ) -> PyResult<Option<Py<PyAny>>> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
         // Here we could release GIL to get some free threading, but under this `get`
         // a lot of comparisons happen, which require to acquire GIL each time.
@@ -170,11 +170,11 @@ impl Moka {
             .or_else(|| default.map(|v| v.clone_ref(py))))
     }
 
-    fn get_with(&self, py: Python, key: PyObject, initializer: PyObject) -> PyResult<PyObject> {
+    fn get_with(&self, py: Python, key: Py<PyAny>, initializer: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
-        py.allow_threads(|| {
+        py.detach(|| {
             self.0.try_get_with(hashable_key, || {
-                Python::with_gil(|py| initializer.call0(py).map(Arc::new))
+                Python::attach(|py| initializer.call0(py).map(Arc::new))
             })
         })
         .map(|v| v.clone_ref(py))
@@ -185,9 +185,9 @@ impl Moka {
     fn remove(
         &self,
         py: Python,
-        key: PyObject,
-        default: Option<PyObject>,
-    ) -> PyResult<Option<PyObject>> {
+        key: Py<PyAny>,
+        default: Option<Py<PyAny>>,
+    ) -> PyResult<Option<Py<PyAny>>> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
         let removed = self.0.remove(&hashable_key);
         Ok(removed
@@ -196,11 +196,11 @@ impl Moka {
     }
 
     fn clear(&self, py: Python) {
-        py.allow_threads(|| self.0.invalidate_all());
+        py.detach(|| self.0.invalidate_all());
     }
 
     fn count(&self, py: Python) -> u64 {
-        py.allow_threads(|| self.0.entry_count())
+        py.detach(|| self.0.entry_count())
     }
 }
 

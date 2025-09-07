@@ -9,9 +9,9 @@ name = "moka_py"
 crate-type = ["cdylib"]
 
 [dependencies]
-ahash = "0.8.11"
+ahash = "0.8.12"
 moka = { version = "0.12", features = ["sync"] }
-pyo3 = "0.24.1"
+pyo3 = "0.26.0"
 
 [profile.release]
 lto = true
