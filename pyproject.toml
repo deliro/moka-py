@@ -6,6 +6,7 @@ build-backend = "maturin"
 name = "moka-py"
 description = "A high performance caching library for Python written in Rust"
 requires-python = ">=3.9"
+readme = "README.md"
 classifiers = [
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
@@ -19,6 +20,11 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/deliro/moka-py"
+Repository = "https://github.com/deliro/moka-py"
+Issues = "https://github.com/deliro/moka-py/issues"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
