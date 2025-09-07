@@ -4,6 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "moka-py"
+description = "A high performance caching library for Python written in Rust"
 requires-python = ">=3.9"
 classifiers = [
   "Programming Language :: Python :: 3.9",
