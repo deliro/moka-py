@@ -11,11 +11,12 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
   "maturin>=1.9.4",
   "pytest-asyncio>=0.24.0",
   "pytest-benchmark>=5.1.0",
