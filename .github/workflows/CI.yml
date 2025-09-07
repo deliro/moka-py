@@ -19,9 +19,22 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::style -D clippy::perf
+      - name: Run rustfmt
+        run: cargo fmt -- --check
+
   linux:
     runs-on: ${{ matrix.platform.runner }}
-    needs: [test]
+    needs: [test, lint]
     strategy:
       matrix:
         platform:
@@ -57,7 +70,7 @@ jobs:
 
   musllinux:
     runs-on: ${{ matrix.platform.runner }}
-    needs: [test]
+    needs: [test, lint]
     strategy:
       matrix:
         platform:
@@ -89,7 +102,7 @@ jobs:
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
-    needs: [test]
+    needs: [test, lint]
     strategy:
       matrix:
         platform:
@@ -117,7 +130,7 @@ jobs:
 
   macos:
     runs-on: ${{ matrix.platform.runner }}
-    needs: [test]
+    needs: [test, lint]
     strategy:
       matrix:
         platform:
@@ -144,7 +157,7 @@ jobs:
 
   sdist:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, lint]
     steps:
       - uses: actions/checkout@v4
       - name: Build sdist
@@ -178,7 +191,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    needs: [linux, musllinux, windows, macos, sdist, test]
+    needs: [linux, musllinux, windows, macos, sdist, test, lint]
     permissions:
       # Use to sign the release artifacts
       id-token: write
