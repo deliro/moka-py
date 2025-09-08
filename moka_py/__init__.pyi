@@ -55,4 +55,12 @@ def cached(
         wait_concurrent: bool = False,
         policy: Policy = "tiny_lfu",
 ) -> Callable[[Fn], Fn]:
-    ...
+    """
+    Decorator for caching function results in a thread-safe in-memory cache.
+
+    - If the decorated function is synchronous: returns the cached value or computes and stores it.
+    - If the decorated function is asynchronous: returns an awaitable which yields the cached result.
+    - If wait_concurrent=True: concurrent calls with the same arguments wait on a single in-flight computation.
+      For async functions this is implemented via a shared asyncio.Task; all awaiters receive the same result
+      or the same exception.
+    """

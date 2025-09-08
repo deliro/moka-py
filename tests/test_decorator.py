@@ -66,6 +66,46 @@ async def test_decorator_async():
     assert len(lst) == len(cases)
 
 
+@pytest.mark.asyncio
+async def test_decorator_async_wait_concurrent():
+    calls = []
+
+    @moka_py.cached(wait_concurrent=True)
+    async def f(x: int, y: int) -> float:
+        calls.append((x, y))
+        await asyncio.sleep(0.1)
+        return x / y
+
+    async def call_once():
+        return await f(12, 3)
+
+    # Run several concurrent calls; only one underlying call should execute
+    results = await asyncio.gather(*(call_once() for _ in range(5)))
+    assert results == [4.0] * 5
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_decorator_async_wait_concurrent_exception():
+    calls = []
+
+    class MyError(Exception):
+        pass
+
+    @moka_py.cached(wait_concurrent=True)
+    async def f(x: int, y: int) -> float:
+        calls.append((x, y))
+        await asyncio.sleep(0.05)
+        raise MyError("boom")
+
+    async def call_once():
+        return await f(12, 3)
+
+    results = await asyncio.gather(*(call_once() for _ in range(5)), return_exceptions=True)
+    assert all(isinstance(e, MyError) for e in results)
+    assert len(calls) == 1
+
+
 def test_cache_clear():
     calls = []
 

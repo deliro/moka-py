@@ -1,36 +1,31 @@
 # moka-py
 
-* * * 
-
-**moka-py** is a Python binding for the highly efficient [Moka](https://github.com/moka-rs/moka) caching library written
-in Rust. This library allows you to leverage the power of Moka's high-performance, feature-rich cache in your Python
-projects.
+**moka-py** is a Python binding to the [Moka](https://github.com/moka-rs/moka) cache written in Rust. It brings Moka’s high-performance, feature‑rich caching to Python.
 
 ## Features
 
-- **Synchronous Cache:** Supports thread-safe, in-memory caching for Python applications.
-- **TTL Support:** Automatically evicts entries after a configurable time-to-live (TTL).
-- **TTI Support:** Automatically evicts entries after a configurable time-to-idle (TTI).
-- **Size-based Eviction:** Automatically removes items when the cache exceeds its size limit using TinyLFU or LRU
-  policy.
-- **Concurrency:** Optimized for high-performance, concurrent access in multithreaded environments.
+- **Synchronous cache:** Thread-safe in-memory caching for Python.
+- **TTL:** Evicts entries after a configurable time to live (TTL).
+- **TTI:** Evicts entries after a configurable time to idle (TTI).
+- **Size-based eviction:** Removes items when capacity is exceeded using TinyLFU or LRU.
+- **Concurrency:** Optimized for high-throughput, concurrent access.
 - **Fully typed:** `mypy` and `pyright` friendly.
 
 ## Installation
 
-You can install `moka-py` using `uv`:
+Install with `uv`:
 
 ```bash
 uv add moka-py
 ```
 
-`poetry`:
+Or with `poetry`:
 
 ```bash
 poetry add moka-py
 ```
 
-Or, if you still stick to `pip` for some reason:
+Or with `pip`:
 
 ```bash
 pip install moka-py
@@ -43,8 +38,8 @@ pip install moka-py
 - [Usage](#usage)
     - [Using moka_py.Moka](#using-moka_pymoka)
     - [@cached decorator](#as-a-decorator)
-    - [async support](#async-support)
-    - [Do not call a function if another function is in progress](#do-not-call-a-function-if-another-function-is-in-progress)
+    - [Async support](#async-support)
+    - [Coalesce concurrent calls (wait_concurrent)](#coalesce-concurrent-calls-wait_concurrent)
     - [Eviction listener](#eviction-listener)
     - [Removing entries](#removing-entries)
 - [How it works](#how-it-works)
@@ -64,8 +59,8 @@ from moka_py import Moka
 # Create a cache with a capacity of 100 entries, with a TTL of 30 seconds
 # and a TTI of 5.2 seconds. Entries are always removed after 30 seconds
 # and are removed after 5.2 seconds if there are no `get`s happened for this time.
-# 
-# Both TTL and TTI settings are optional. In the absence of an entry, 
+#
+# Both TTL and TTI settings are optional. In the absence of an entry,
 # the corresponding policy will not expire it.
 
 # The default eviction policy is "tiny_lfu" which is optimal for most workloads,
@@ -116,20 +111,20 @@ from moka_py import cached
 
 @cached(maxsize=1024, ttl=10.0, tti=1.0)
 async def f(x, y):
-    print("http request happening")
+    print("HTTP request in progress")
     await asyncio.sleep(2.0)
     return x + y
 
 
 start = perf_counter()
 assert asyncio.run(f(5, 6)) == 11
-assert asyncio.run(f(5, 6)) == 11  # got from cache
+assert asyncio.run(f(5, 6)) == 11  # from cache
 assert perf_counter() - start < 4.0
 ```
 
-### Do not call a function if another function is in progress
+### Coalesce concurrent calls (wait_concurrent)
 
-moka-py can synchronize threads on keys
+`moka-py` can synchronize threads on keys
 
 ```python
 import moka_py
@@ -145,7 +140,7 @@ calls = []
 @moka_py.cached(ttl=5, wait_concurrent=True)
 def get_user(id_: int) -> dict[str, Any]:
     calls.append(id_)
-    sleep(0.3)  # simulation of HTTP request
+    sleep(0.3)  # simulate an HTTP request
     return {
         "id": id_,
         "first_name": "Jack",
@@ -155,13 +150,13 @@ def get_user(id_: int) -> dict[str, Any]:
 
 def process_request(path: str, user_id: int) -> None:
     user = get_user(user_id)
-    print(f"user #{user_id} came to {path}, their info is {user}")
+    print(f"user #{user_id} visited {path}, info is {user}")
     ...
 
 
 def charge_money(from_user_id: int, amount: Decimal) -> None:
     user = get_user(from_user_id)
-    print(f"charging {amount} money from user #{from_user_id} ({user['first_name']} {user['last_name']})")
+    print(f"charging {amount} from user #{from_user_id} ({user['first_name']} {user['last_name']})")
     ...
 
 
@@ -173,20 +168,23 @@ if __name__ == '__main__':
     request_processing.join()
     money_charging.join()
 
-    # only one call occurred. without the `wait_concurrent` option, each thread would go for an HTTP request
-    # since no cache key was set
-    assert len(calls) == 1  
+    # Only one call occurred. Without `wait_concurrent`, each thread would issue its own HTTP request
+    # before the cache entry is set.
+    assert len(calls) == 1
 ```
 
-> **_ATTENTION:_**  `wait_concurrent` is not yet supported for async functions and will throw `NotImplementedError`
+### Async wait_concurrent
+
+When using `wait_concurrent=True` with async functions, `moka-py` creates a shared `asyncio.Task` per cache key. All
+concurrent callers `await` the same task and receive the same result or exception. This eliminates duplicate in-flight
+work for identical arguments.
 
 ### Eviction listener
 
-moka-py supports adding of an eviction listener that's called whenever a key is dropped
-from the cache for some reason. The listener must be a 3-arguments function `(key, value, cause)`. The arguments
-are passed as positional (not keyword).
+`moka-py` supports an eviction listener, called whenever a key is removed.
+The listener must be a three-argument function `(key, value, cause)` and uses positional arguments only.
 
-There are 4 reasons why a key may be dropped:
+Possible reasons:
 
 1. `"expired"`: The entry's expiration timestamp has passed.
 2. `"explicit"`: The entry was manually removed by the user (`.remove()` is called).
@@ -223,19 +221,14 @@ moka.get("foo")
 # entry foo:[4] was evicted. cause='expired'
 ```
 
-> **_IMPORTANT NOTES_**:
-> 1. It's not guaranteed that the listener will be called just in time. Also, the underlying `moka` doesn't use any
-     background threads or tasks, hence, the listener is never called in "background"
-> 2. The listener must never raise any kind of `Exception`. If an exception is raised, it might be raised to any of the
-     moka-py method in any of the threads that call this method.
-> 3. The listener must be fast. Since it's called only when you're interacting with `moka-py` (via `.get()` / `.set()` /
-     etc.), the listener will slow down these operations. It's terrible idea to do some sort of IO in the listener. If
-     you need so, run a `ThreadPoolExecutor` somewhere and call `.submit()` inside of the listener or commit an async
-     task via `asyncio.create_task()`
+> IMPORTANT NOTES
+> 1) The listener is not called just-in-time. `moka` has no background threads or tasks; it runs only during cache operations.
+> 2) The listener must not raise exceptions. If it does, the exception may surface from any `moka-py` method on any thread.
+> 3) Keep the listener fast. Heavy work (especially I/O) will slow `.get()`, `.set()`, etc. Offload via `ThreadPoolExecutor.submit()` or `asyncio.create_task()`
 
 ### Removing entries
 
-An entry can be removed using `Moka.remove(key)`. If a value was set, it is returned; otherwise, `None` is returned.
+Remove an entry with `Moka.remove(key)`. It returns the previous value if present; otherwise `None`.
 
 ```python
 from moka_py import Moka
@@ -247,8 +240,7 @@ assert c.remove("hello") == "world"
 assert c.get("hello") is None
 ```
 
-In some cases you may want `None`s to be a valid cache value. In this case you need to distinguish between `None` as a
-value and `None` as the absence of a value. Use `Moka.remove(key, default=...)`:
+If `None` is a valid cached value, distinguish it from absence using `Moka.remove(key, default=...)`:
 
 ```python
 from moka_py import Moka
@@ -256,19 +248,18 @@ from moka_py import Moka
 
 c = Moka(128)
 c.set("hello", None)
-assert c.remove("hello", default="WAS_NOT_SET") is None  # None is returned since is was set 
+assert c.remove("hello", default="WAS_NOT_SET") is None  # None was set explicitly
 
-# Now entry with key "hello" doesn't exist so `default` argument is returned 
-assert c.remove("hello", default="WAS_NOT_SET") == "WAS_NOT_SET" 
+# Now the entry "hello" does not exist, so `default` is returned
+assert c.remove("hello", default="WAS_NOT_SET") == "WAS_NOT_SET"
 ```
 
 ## How it works
 
-`Moka` object stores Python object references
-(by [`INCREF`ing](https://docs.python.org/3/c-api/refcounting.html#c.Py_INCREF) `PyObject`s) and doesn't use
-serialization or deserialization. This means you can use any Python object as a value and any Hashable object as a
-key (`Moka` calls keys' `__hash__` magic methods). But also you need to remember that mutable objects stored in `Moka`
-are still mutable:
+`Moka` stores Python object references
+(by [`Py_INCREF`](https://docs.python.org/3/c-api/refcounting.html#c.Py_INCREF)) and does not serialize or deserialize values.
+You can use any Python object as a value and any hashable object as a key (`__hash__` is used).
+Mutable objects remain mutable:
 
 ```python
 from moka_py import Moka
@@ -284,8 +275,8 @@ assert my_list == [1, 2, 3, 4]
 
 ## Eviction policies
 
-moka-py uses the TinyLFU eviction policy as default, with LRU option. You can learn more about the
-policies [here](https://github.com/moka-rs/moka/wiki#admission-and-eviction-policies)
+`moka-py` uses TinyLFU by default, with an LRU option. Learn more in the
+[Moka wiki](https://github.com/moka-rs/moka/wiki#admission-and-eviction-policies).
 
 ## Performance
 
@@ -309,4 +300,4 @@ test_bench_set[lru]                637.3014 (6.32)     644.4533 (5.92)     640.3
 
 ## License
 
-moka-py is distributed under the [MIT license](LICENSE)
+`moka-py` is distributed under the [MIT license](LICENSE).
