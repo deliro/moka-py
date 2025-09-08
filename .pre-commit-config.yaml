@@ -1,17 +1,9 @@
 repos:
   - repo: local
     hooks:
-      - id: rust-fmt
-        name: rust-fmt
-        entry: cargo fmt
+      - id: lint-fmt
+        name: lint-fmt
+        entry: just
         language: system
-        types: [rust]
-        pass_filenames: false
-        always_run: true
-      - id: rust-clippy
-        name: rust-clippy
-        entry: cargo clippy --all-targets --all-features -- -D warnings -W clippy::style -D clippy::perf
-        language: system
-        types: [rust]
         pass_filenames: false
         always_run: true

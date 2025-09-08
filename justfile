@@ -1,15 +1,22 @@
 default: check
 
-lint:
+lint-py:
+    uv run ruff check .
+
+lint-rust:
     cargo clippy --all-targets --all-features -- -D warnings -W clippy::style -D clippy::perf
+
+lint: lint-py lint-rust
 
 clippy: lint
 
-fmt:
+fmt-py:
+    uv run ruff format --exit-non-zero-on-format .
+
+fmt-rust:
     cargo fmt
 
-fmt-check:
-    cargo fmt -- --check
+fmt: fmt-py fmt-rust
 
 check: fmt lint
 

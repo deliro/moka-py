@@ -1,17 +1,26 @@
 import asyncio as _asyncio
-from functools import wraps as _wraps, _make_key
+from functools import _make_key
+from functools import wraps as _wraps
 from typing import Any as _Any
-from .moka_py import Moka, get_version as _get_version
 
+from .moka_py import Moka
+from .moka_py import get_version as _get_version
 
-__all__ = ["Moka", "cached", "VERSION"]
+__all__ = ["VERSION", "Moka", "cached"]
 
 VERSION = _get_version()
 
 
-def cached(maxsize=128, typed=False, *, ttl=None, tti=None, wait_concurrent=False, policy="tiny_lfu"):
-    """
-    Cache decorator for sync and async functions with TTL/TTI and optional concurrent-waiting.
+def cached(
+    maxsize=128,
+    typed=False,
+    *,
+    ttl=None,
+    tti=None,
+    wait_concurrent=False,
+    policy="tiny_lfu",
+):
+    """Cache decorator for sync and async functions with TTL/TTI and optional concurrent-waiting.
 
     - For sync functions: returns cached value if present, otherwise computes and stores it.
     - For async functions: returns an awaitable; with wait_concurrent=True a single shared task is created per key
@@ -22,6 +31,7 @@ def cached(maxsize=128, typed=False, *, ttl=None, tti=None, wait_concurrent=Fals
 
     def dec(fn):
         if _asyncio.iscoroutinefunction(fn):
+
             @_wraps(fn)
             async def inner(*args, **kwargs):
                 key = _make_key(args, kwargs, typed)
@@ -40,6 +50,7 @@ def cached(maxsize=128, typed=False, *, ttl=None, tti=None, wait_concurrent=Fals
                     cache.set(key, value)
                     return value
         else:
+
             @_wraps(fn)
             def inner(*args, **kwargs):
                 key = _make_key(args, kwargs, typed)

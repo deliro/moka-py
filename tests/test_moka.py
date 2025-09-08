@@ -1,7 +1,7 @@
 import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from time import monotonic, sleep, perf_counter
+from time import monotonic, perf_counter, sleep
 
 import pytest
 
@@ -60,26 +60,23 @@ def test_remove(default):
     moka = moka_py.Moka(128)
     moka.set("hello", "world")
 
-    if default is _not_set:
-        removed = moka.remove("hello")
-    else:
-        removed = moka.remove("hello", default=default)
+    removed = moka.remove("hello") if default is _not_set else moka.remove("hello", default=default)
 
     assert removed == "world"
     assert moka.get("hello") is None
 
 
-@pytest.mark.parametrize(("default", "expected"), [
-    (_not_set, None),
-    (None, None),
-    ("DEFAULT", "DEFAULT"),
-])
+@pytest.mark.parametrize(
+    ("default", "expected"),
+    [
+        (_not_set, None),
+        (None, None),
+        ("DEFAULT", "DEFAULT"),
+    ],
+)
 def test_remove_default(default, expected):
     moka = moka_py.Moka(128)
-    if default is _not_set:
-        removed = moka.remove("hello")
-    else:
-        removed = moka.remove("hello", default=default)
+    removed = moka.remove("hello") if default is _not_set else moka.remove("hello", default=default)
     assert removed == expected
 
 
@@ -158,7 +155,12 @@ def test_eviction_listener():
         moka.set(f"out-of-size-{i}", 123)
     sleep(1)
     assert moka.get("foo") is None
-    assert {cause for _, _, cause in evicted} == {"size", "explicit", "expired", "replaced"}
+    assert {cause for _, _, cause in evicted} == {
+        "size",
+        "explicit",
+        "expired",
+        "replaced",
+    }
 
 
 def test_eviction_listener_io():

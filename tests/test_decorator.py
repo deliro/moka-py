@@ -1,11 +1,11 @@
 import asyncio
+import random
 from threading import Thread
 from time import sleep
 
 import pytest
 
 import moka_py
-import random
 
 
 def test_decorator_sync():
@@ -16,9 +16,7 @@ def test_decorator_sync():
         lst.append((x, y))
         return x / y
 
-    cases = [
-        (1, 2), (3, 4), (5, 6), (7, 8)
-    ]
+    cases = [(1, 2), (3, 4), (5, 6), (7, 8)]
 
     answers = {}
 
@@ -46,9 +44,7 @@ async def test_decorator_async():
         await asyncio.sleep(0.01)
         return x / y
 
-    cases = [
-        (1, 2), (3, 4), (5, 6), (7, 8)
-    ]
+    cases = [(1, 2), (3, 4), (5, 6), (7, 8)]
 
     answers = {}
 
@@ -121,10 +117,7 @@ def test_cache_clear():
     assert len(calls) == 2
 
 
-@pytest.mark.parametrize(("wait", "expected_calls"), [
-    (True, 1),
-    (False, 5)
-])
+@pytest.mark.parametrize(("wait", "expected_calls"), [(True, 1), (False, 5)])
 def test_wait_concurrent(wait, expected_calls):
     calls = []
 
@@ -162,12 +155,16 @@ def test_return_none():
 
     assert calls == [(5, 1), (4, 2)]
 
-@pytest.mark.parametrize(("policy", "must_fail"), [
-    (None, False),
-    ("tiny_lfu", False),
-    ("lru", False),
-    ("unknown_policy", True),
-])
+
+@pytest.mark.parametrize(
+    ("policy", "must_fail"),
+    [
+        (None, False),
+        ("tiny_lfu", False),
+        ("lru", False),
+        ("unknown_policy", True),
+    ],
+)
 def test_policy(policy, must_fail):
     if must_fail:
         with pytest.raises(ValueError):

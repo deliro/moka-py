@@ -1,8 +1,9 @@
 import sys
-from itertools import cycle, chain
-import pytest
-import moka_py
+from itertools import chain, cycle
 
+import pytest
+
+import moka_py
 
 print("moka_py version:", moka_py.VERSION, file=sys.stderr)
 
@@ -30,17 +31,17 @@ def test_bench_set_str_key(benchmark):
     benchmark(_set)
 
 
-@pytest.mark.parametrize(("policy", "existent"), [
-    ("tiny_lfu", True),
-    ("tiny_lfu", False),
-    ("lru", True),
-    ("lru", False),
-])
+@pytest.mark.parametrize(
+    ("policy", "existent"),
+    [
+        ("tiny_lfu", True),
+        ("tiny_lfu", False),
+        ("lru", True),
+        ("lru", False),
+    ],
+)
 def test_bench_get(benchmark, policy, existent):
-    if existent:
-        needle = "pretty_long_key_of_index_5432"
-    else:
-        needle = "hello"
+    needle = "pretty_long_key_of_index_5432" if existent else "hello"
 
     moka = moka_py.Moka(10_000, policy=policy)
     payload = "hello" * 100_000

@@ -109,12 +109,15 @@ def test_sync_wait_concurrent_exception():
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("ttl,tti", [
-    (0.0, None),
-    (-1.0, None),
-    (None, 0.0),
-    (None, -2.0),
-])
+@pytest.mark.parametrize(
+    "ttl,tti",
+    [
+        (0.0, None),
+        (-1.0, None),
+        (None, 0.0),
+        (None, -2.0),
+    ],
+)
 def test_invalid_ttl_tti(ttl, tti):
     kwargs = {}
     if ttl is not None:
