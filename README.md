@@ -56,16 +56,16 @@ from time import sleep
 from moka_py import Moka
 
 
-# Create a cache with a capacity of 100 entries, with a TTL of 30 seconds
-# and a TTI of 5.2 seconds. Entries are always removed after 30 seconds
-# and are removed after 5.2 seconds if there are no `get`s happened for this time.
+# Create a cache with a capacity of 100 entries, with a TTL of 10.0 seconds
+# and a TTI of 0.1 seconds. Entries are always removed after 10 seconds
+# and are removed after 0.1 seconds if there are no `get`s happened for this time.
 #
 # Both TTL and TTI settings are optional. In the absence of an entry,
 # the corresponding policy will not expire it.
 
 # The default eviction policy is "tiny_lfu" which is optimal for most workloads,
 # but you can choose "lru" as well.
-cache: Moka[str, list[int]] = Moka(capacity=100, ttl=30, tti=5.2, policy="lru")
+cache: Moka[str, list[int]] = Moka(capacity=100, ttl=10.0, tti=0.1, policy="lru")
 
 # Insert a value.
 cache.set("key", [3, 2, 1])
@@ -73,8 +73,8 @@ cache.set("key", [3, 2, 1])
 # Retrieve the value.
 assert cache.get("key") == [3, 2, 1]
 
-# Wait for 5.2+ seconds, and the entry will be automatically evicted.
-sleep(5.3)
+# Wait for 0.1+ seconds, and the entry will be automatically evicted.
+sleep(0.12)
 assert cache.get("key") is None
 ```
 
@@ -87,16 +87,21 @@ from time import sleep
 from moka_py import cached
 
 
-@cached(maxsize=1024, ttl=10.0, tti=1.0)
+calls = []
+
+
+@cached(maxsize=1024, ttl=5.0, tti=0.05)
 def f(x, y):
-    print("hard computations")
+    calls.append((x, y))
     return x + y
 
 
-f(1, 2)  # calls computations
-f(1, 2)  # gets from the cache
-sleep(1.1)
-f(1, 2)  # calls computations (since TTI has passed)
+assert f(1, 2) == 3  # calls computations
+assert f(1, 2) == 3  # gets from the cache
+assert len(calls) == 1
+sleep(0.06)
+assert f(1, 2) == 3  # calls computations again (since TTI has passed)
+assert len(calls) == 2
 ```
 
 ### Async support
@@ -109,17 +114,22 @@ from time import perf_counter
 from moka_py import cached
 
 
-@cached(maxsize=1024, ttl=10.0, tti=1.0)
+calls = []
+
+
+@cached(maxsize=1024, ttl=5.0, tti=0.1)
 async def f(x, y):
-    print("HTTP request in progress")
-    await asyncio.sleep(2.0)
+    calls.append((x, y))
+    await asyncio.sleep(0.05)
     return x + y
 
 
 start = perf_counter()
 assert asyncio.run(f(5, 6)) == 11
 assert asyncio.run(f(5, 6)) == 11  # from cache
-assert perf_counter() - start < 4.0
+elapsed = perf_counter() - start
+assert elapsed < 0.2
+assert len(calls) == 1
 ```
 
 ### Coalesce concurrent calls (wait_concurrent)
@@ -135,12 +145,13 @@ from decimal import Decimal
 
 
 calls = []
+start_barrier = threading.Barrier(2)
 
 
 @moka_py.cached(ttl=5, wait_concurrent=True)
 def get_user(id_: int) -> dict[str, Any]:
     calls.append(id_)
-    sleep(0.3)  # simulate an HTTP request
+    sleep(0.02)  # simulate an HTTP request (short for tests)
     return {
         "id": id_,
         "first_name": "Jack",
@@ -149,14 +160,14 @@ def get_user(id_: int) -> dict[str, Any]:
 
 
 def process_request(path: str, user_id: int) -> None:
+    start_barrier.wait()
     user = get_user(user_id)
-    print(f"user #{user_id} visited {path}, info is {user}")
     ...
 
 
 def charge_money(from_user_id: int, amount: Decimal) -> None:
+    start_barrier.wait()
     user = get_user(from_user_id)
-    print(f"charging {amount} from user #{from_user_id} ({user['first_name']} {user['last_name']})")
     ...
 
 
@@ -199,26 +210,27 @@ from time import sleep
 
 
 def key_evicted(
-        k: str,
-        v: list[int],
-        cause: Literal["explicit", "size", "expired", "replaced"]
+    k: str,
+    v: list[int],
+    cause: Literal["explicit", "size", "expired", "replaced"]
 ):
-    print(f"entry {k}:{v} was evicted. {cause=}")
+    events.append((k, v, cause))
 
 
-moka: Moka[str, list[int]] = Moka(2, eviction_listener=key_evicted, ttl=0.1)
+events: list[tuple[str, list[int], str]] = []
+
+
+moka: Moka[str, list[int]] = Moka(2, eviction_listener=key_evicted, ttl=0.5)
 moka.set("hello", [1, 2, 3])
-moka.set("hello", [3, 2, 1])
-moka.set("foo", [4])
-moka.set("bar", [])
-sleep(1)
-moka.get("foo")
+moka.set("hello", [3, 2, 1])  # replaced
+moka.set("foo", [4])  # expired
+moka.set("baz", "size")
+moka.remove("foo")  # explicit
+sleep(1.0)
+moka.get("anything")  # this will trigger eviction for expired
 
-# will print
-# entry hello:[1, 2, 3] was evicted. cause='replaced'
-# entry bar:[] was evicted. cause='size'
-# entry hello:[3, 2, 1] was evicted. cause='expired'
-# entry foo:[4] was evicted. cause='expired'
+causes = {c for _, _, c in events}
+assert causes == {"size", "expired", "replaced", "explicit"}, events
 ```
 
 > IMPORTANT NOTES
