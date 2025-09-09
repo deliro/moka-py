@@ -145,7 +145,6 @@ from decimal import Decimal
 
 
 calls = []
-start_barrier = threading.Barrier(2)
 
 
 @moka_py.cached(ttl=5, wait_concurrent=True)
@@ -160,13 +159,11 @@ def get_user(id_: int) -> dict[str, Any]:
 
 
 def process_request(path: str, user_id: int) -> None:
-    start_barrier.wait()
     user = get_user(user_id)
     ...
 
 
 def charge_money(from_user_id: int, amount: Decimal) -> None:
-    start_barrier.wait()
     user = get_user(from_user_id)
     ...
 
