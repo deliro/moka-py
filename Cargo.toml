@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 ahash = "0.8.12"
 moka = { version = "0.12", features = ["sync"] }
-pyo3 = { version = "0.27", features = ["generate-import-lib"] }
+pyo3 = { version = "0.26", features = ["generate-import-lib"] }
 
 [profile.release]
 lto = true
