@@ -1,3 +1,28 @@
+#[cfg(all(
+    feature = "mimalloc",
+    any(
+        all(
+            target_family = "unix",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ),
+        all(target_os = "windows", target_arch = "x86_64"),
+    )
+))]
+use mimalloc::MiMalloc;
+
+#[cfg(all(
+    feature = "mimalloc",
+    any(
+        all(
+            target_family = "unix",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ),
+        all(target_os = "windows", target_arch = "x86_64"),
+    )
+))]
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::Arc;

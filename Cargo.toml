@@ -3,13 +3,17 @@ name = "moka-py"
 version = "0.2.4"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 name = "moka_py"
 crate-type = ["cdylib"]
 
+[features]
+default = ["mimalloc"]
+mimalloc = ["dep:mimalloc"]
+
 [dependencies]
-ahash = "0.8.12"
+ahash = "0.8"
+mimalloc = { version = "0.1", features = ["local_dynamic_tls"], optional = true }
 moka = { version = "0.12", features = ["sync"] }
 pyo3 = { version = "0.26", features = ["generate-import-lib"] }
 
