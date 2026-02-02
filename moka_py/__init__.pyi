@@ -17,12 +17,24 @@ class Moka(Generic[K, V]):
         eviction_listener: Callable[[K, V, Cause], None] | None = None,
         policy: Policy = "tiny_lfu",
     ): ...
-    def set(self, key: K, value: V) -> None: ...
+    def set(
+        self,
+        key: K,
+        value: V,
+        ttl: int | float | None = None,
+        tti: int | float | None = None,
+    ) -> None: ...
     @overload
     def get(self, key: K, default: D) -> V | D: ...
     @overload
     def get(self, key: K, default: D | None = None) -> V | D | None: ...
-    def get_with(self, key: K, initializer: Callable[[], V]) -> V:
+    def get_with(
+        self,
+        key: K,
+        initializer: Callable[[], V],
+        ttl: int | float | None = None,
+        tti: int | float | None = None,
+    ) -> V:
         """Lookup or initialize a value for the key.
 
         If multiple threads call `get_with` with the same key, only one calls `initializer`,

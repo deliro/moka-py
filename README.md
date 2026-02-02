@@ -7,6 +7,7 @@
 - **Synchronous cache:** Thread-safe in-memory caching for Python.
 - **TTL:** Evicts entries after a configurable time to live (TTL).
 - **TTI:** Evicts entries after a configurable time to idle (TTI).
+- **Per-entry TTL / TTI:** Override the cache-wide TTL or TTI on individual entries.
 - **Size-based eviction:** Removes items when capacity is exceeded using TinyLFU or LRU.
 - **Concurrency:** Optimized for high-throughput, concurrent access.
 - **Fully typed:** `mypy` and `pyright` friendly.
@@ -37,6 +38,7 @@ pip install moka-py
 - [Features](#features)
 - [Usage](#usage)
     - [Using moka_py.Moka](#using-moka_pymoka)
+    - [Per-entry TTL / TTI](#per-entry-ttl--tti)
     - [@cached decorator](#as-a-decorator)
     - [Async support](#async-support)
     - [Coalesce concurrent calls (wait_concurrent)](#coalesce-concurrent-calls-wait_concurrent)
@@ -76,6 +78,112 @@ assert cache.get("key") == [3, 2, 1]
 # Wait for 0.1+ seconds, and the entry will be automatically evicted.
 sleep(0.12)
 assert cache.get("key") is None
+```
+
+### Per-entry TTL / TTI
+
+By default, TTL and TTI are set once for the entire cache. You can also set them
+per entry by passing `ttl` and/or `tti` to `set()` or `get_with()`:
+
+```python
+from time import sleep
+from moka_py import Moka
+
+
+cache = Moka(100)
+
+cache.set("short-lived", "value", ttl=0.5)
+cache.set("session", {"user": "alice"}, ttl=3600.0)
+cache.set("idle-sensitive", "value", tti=1.0)
+cache.set("both", "value", ttl=60.0, tti=5.0)
+
+# Entries without per-entry ttl/tti never expire (unless the cache has global settings).
+cache.set("permanent", "value")
+
+sleep(0.6)
+assert cache.get("short-lived") is None  # expired after 0.5s
+assert cache.get("session") is not None  # still alive
+assert cache.get("permanent") is not None
+```
+
+`get_with()` accepts the same parameters:
+
+```python
+from moka_py import Moka
+
+
+cache = Moka(100)
+
+value = cache.get_with("key", lambda: "computed", ttl=30.0)
+```
+
+#### Concurrent `get_with` with different TTL / TTI
+
+`get_with()` guarantees that only **one** thread executes the initializer for a given key (stampede protection).
+When multiple threads call `get_with()` for the same key concurrently with **different** `ttl`/`tti` values,
+the thread that wins the race runs its initializer — and its `ttl`/`tti` values are stored with the entry.
+All other threads receive the same cached value and their `ttl`/`tti` parameters are **silently ignored**.
+
+```python
+import threading
+from moka_py import Moka
+
+
+cache = Moka(100)
+
+# Thread A: get_with("k", compute, ttl=1.0)
+# Thread B: get_with("k", compute, ttl=60.0)
+#
+# If thread A wins, the entry expires in 1 second.
+# If thread B wins, the entry expires in 60 seconds.
+# The loser's ttl is discarded — it is NOT merged or compared.
+```
+
+#### Interaction with cache-wide TTL / TTI
+
+When the cache is constructed with global `ttl` or `tti` **and** an entry specifies its own, the entry
+expires at whichever deadline comes **first**.
+
+> **WARNING**
+>
+> Per-entry TTL / TTI can only make an entry expire **sooner** than the cache-wide
+> policy, not later. This is a technical limitation of the underlying
+> [Moka](https://github.com/moka-rs/moka) library: global and per-entry expiration
+> are evaluated independently, and the earliest deadline wins.
+>
+> If you need entries with different lifetimes that can **exceed** a common default,
+> do not set global `ttl`/`tti` on the cache. Use per-entry values exclusively instead.
+
+```python
+from moka_py import Moka
+
+# Do this:
+cache = Moka(1000)
+cache.set("short", "v", ttl=60.0)
+cache.set("long", "v", ttl=300.0)  # works as expected
+
+# NOT this — "long" will still expire in 60 s:
+cache = Moka(1000, ttl=60.0)
+cache.set("long", "v", ttl=300.0)  # capped at 60 s by the global policy
+```
+
+```python
+from time import sleep
+from moka_py import Moka
+
+
+# Global TTL of 10 seconds.
+cache = Moka(100, ttl=10.0)
+
+# This entry will expire in 0.5 s (per-entry TTL wins, it is shorter).
+cache.set("fast", "value", ttl=0.5)
+
+# This entry keeps the global 10 s TTL (per-entry TTL=20 s is longer, so global wins).
+cache.set("slow", "value", ttl=20.0)
+
+sleep(0.6)
+assert cache.get("fast") is None
+assert cache.get("slow") is not None
 ```
 
 ### As a decorator
@@ -234,6 +342,10 @@ assert causes == {"size", "expired", "replaced", "explicit"}, events
 > 1) The listener is not called just-in-time. `moka` has no background threads or tasks; it runs only during cache operations.
 > 2) The listener must not raise exceptions. If it does, the exception may surface from any `moka-py` method on any thread.
 > 3) Keep the listener fast. Heavy work (especially I/O) will slow `.get()`, `.set()`, etc. Offload via `ThreadPoolExecutor.submit()` or `asyncio.create_task()`
+> 4) **Per-entry TTL / TTI and the eviction listener.** Per-entry expiry fires the
+>    listener with `"expired"` just like global TTL/TTI does. The notification is
+>    delivered lazily during subsequent cache operations (e.g. `get`, `set`) after
+>    the per-entry deadline passes — it is not instant.
 
 ### Removing entries
 

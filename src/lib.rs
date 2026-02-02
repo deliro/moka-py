@@ -1,11 +1,12 @@
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use moka::notification::RemovalCause;
 use moka::policy::EvictionPolicy;
 use moka::sync::Cache;
+use moka::Expiry;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
@@ -84,8 +85,88 @@ impl From<Policy> for EvictionPolicy {
     }
 }
 
+#[inline]
+fn parse_duration(value: Option<f64>, name: &str) -> PyResult<Option<Duration>> {
+    match value {
+        Some(v) => {
+            let micros = (v * 1_000_000.0) as u64;
+            if micros == 0 {
+                return Err(PyValueError::new_err(format!("{name} must be positive")));
+            }
+            Ok(Some(Duration::from_micros(micros)))
+        }
+        None => Ok(None),
+    }
+}
+
+#[derive(Clone)]
+struct ValueWrapper {
+    value: Arc<Py<PyAny>>,
+    per_entry_ttl: Option<Duration>,
+    per_entry_tti: Option<Duration>,
+    created_at: Instant,
+}
+
+struct PerEntryExpiry;
+
+impl PerEntryExpiry {
+    /// Return the remaining TTL from creation, or `None` if no TTL is set.
+    #[inline]
+    fn remaining_ttl(value: &ValueWrapper, now: Instant) -> Option<Duration> {
+        value.per_entry_ttl.map(|ttl| {
+            let elapsed = now.saturating_duration_since(value.created_at);
+            ttl.saturating_sub(elapsed)
+        })
+    }
+}
+
+impl Expiry<AnyKey, ValueWrapper> for PerEntryExpiry {
+    fn expire_after_create(
+        &self,
+        _key: &AnyKey,
+        value: &ValueWrapper,
+        _created_at: Instant,
+    ) -> Option<Duration> {
+        match (value.per_entry_ttl, value.per_entry_tti) {
+            (Some(ttl), Some(tti)) => Some(ttl.min(tti)),
+            (Some(x), None) | (None, Some(x)) => Some(x),
+            (None, None) => None,
+        }
+    }
+
+    fn expire_after_read(
+        &self,
+        _key: &AnyKey,
+        value: &ValueWrapper,
+        read_at: Instant,
+        duration_until_expiry: Option<Duration>,
+        _last_modified_at: Instant,
+    ) -> Option<Duration> {
+        let remaining_ttl = Self::remaining_ttl(value, read_at);
+        match (value.per_entry_tti, remaining_ttl) {
+            (Some(tti), Some(ttl_rem)) => Some(tti.min(ttl_rem)),
+            (Some(tti), None) => Some(tti),
+            (None, _) => duration_until_expiry,
+        }
+    }
+
+    fn expire_after_update(
+        &self,
+        _key: &AnyKey,
+        value: &ValueWrapper,
+        _updated_at: Instant,
+        _duration_until_expiry: Option<Duration>,
+    ) -> Option<Duration> {
+        match (value.per_entry_ttl, value.per_entry_tti) {
+            (Some(ttl), Some(tti)) => Some(ttl.min(tti)),
+            (Some(x), None) | (None, Some(x)) => Some(x),
+            (None, None) => None,
+        }
+    }
+}
+
 #[pyclass]
-struct Moka(Cache<AnyKey, Arc<Py<PyAny>>, ahash::RandomState>);
+struct Moka(Cache<AnyKey, ValueWrapper, ahash::RandomState>);
 
 #[pymethods]
 impl Moka {
@@ -101,6 +182,7 @@ impl Moka {
         let policy = policy.parse::<Policy>().map_err(PyValueError::new_err)?;
         let mut builder = Cache::builder()
             .max_capacity(capacity)
+            .expire_after(PerEntryExpiry)
             .eviction_policy(policy.into());
 
         if let Some(ttl) = ttl {
@@ -120,10 +202,10 @@ impl Moka {
         }
 
         if let Some(listener) = eviction_listener {
-            let listen_fn = move |k: Arc<AnyKey>, v: Arc<Py<PyAny>>, cause: RemovalCause| {
+            let listen_fn = move |k: Arc<AnyKey>, v: ValueWrapper, cause: RemovalCause| {
                 Python::attach(|py| {
                     let key = k.as_ref().obj.clone_ref(py);
-                    let value = v.as_ref().clone_ref(py);
+                    let value = v.value.as_ref().clone_ref(py);
                     if let Err(e) = listener.call1(py, (key, value, cause_to_str(cause))) {
                         e.restore(py)
                     }
@@ -145,10 +227,25 @@ impl Moka {
         Ok(cls)
     }
 
-    fn set(&self, py: Python, key: Py<PyAny>, value: Py<PyAny>) -> PyResult<()> {
+    #[pyo3(signature = (key, value, ttl=None, tti=None))]
+    fn set(
+        &self,
+        py: Python,
+        key: Py<PyAny>,
+        value: Py<PyAny>,
+        ttl: Option<f64>,
+        tti: Option<f64>,
+    ) -> PyResult<()> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
-        let value = Arc::new(value);
-        self.0.insert(hashable_key, value);
+        let per_entry_ttl = parse_duration(ttl, "ttl")?;
+        let per_entry_tti = parse_duration(tti, "tti")?;
+        let wrapper = ValueWrapper {
+            value: Arc::new(value),
+            per_entry_ttl,
+            per_entry_tti,
+            created_at: Instant::now(),
+        };
+        self.0.insert(hashable_key, wrapper);
         Ok(())
     }
 
@@ -166,18 +263,35 @@ impl Moka {
         // instead of switching it on and off.
         let value = self.0.get(&hashable_key);
         Ok(value
-            .map(|v| v.clone_ref(py))
+            .map(|v| v.value.clone_ref(py))
             .or_else(|| default.map(|v| v.clone_ref(py))))
     }
 
-    fn get_with(&self, py: Python, key: Py<PyAny>, initializer: Py<PyAny>) -> PyResult<Py<PyAny>> {
+    #[pyo3(signature = (key, initializer, ttl=None, tti=None))]
+    fn get_with(
+        &self,
+        py: Python,
+        key: Py<PyAny>,
+        initializer: Py<PyAny>,
+        ttl: Option<f64>,
+        tti: Option<f64>,
+    ) -> PyResult<Py<PyAny>> {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
+        let per_entry_ttl = parse_duration(ttl, "ttl")?;
+        let per_entry_tti = parse_duration(tti, "tti")?;
         py.detach(|| {
             self.0.try_get_with(hashable_key, || {
-                Python::attach(|py| initializer.call0(py).map(Arc::new))
+                Python::attach(|py| {
+                    initializer.call0(py).map(|v| ValueWrapper {
+                        value: Arc::new(v),
+                        per_entry_ttl,
+                        per_entry_tti,
+                        created_at: Instant::now(),
+                    })
+                })
             })
         })
-        .map(|v| v.clone_ref(py))
+        .map(|v| v.value.clone_ref(py))
         .map_err(|e| e.clone_ref(py))
     }
 
@@ -191,7 +305,7 @@ impl Moka {
         let hashable_key = AnyKey::new_with_gil(key, py)?;
         let removed = self.0.remove(&hashable_key);
         Ok(removed
-            .map(|v| v.clone_ref(py))
+            .map(|v| v.value.clone_ref(py))
             .or_else(|| default.map(|v| v.clone_ref(py))))
     }
 

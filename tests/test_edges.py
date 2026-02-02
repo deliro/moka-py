@@ -132,3 +132,82 @@ def test_unhashable_key():
     c = moka_py.Moka(4)
     with pytest.raises(TypeError):
         c.set(["a"], 1)
+
+
+def test_concurrent_get_with_different_ttl():
+    """When multiple threads call get_with for the same key with different TTL,
+    only the winning (first) initializer's TTL is used."""
+    cache = moka_py.Moka(16)
+    results = {}
+
+    def init_short():
+        sleep(0.1)  # slow enough for the other thread to start waiting
+        return "short"
+
+    def init_long():
+        sleep(0.1)
+        return "long"
+
+    def thread_short():
+        results["short"] = cache.get_with("k", init_short, ttl=0.2)
+
+    def thread_long():
+        results["long"] = cache.get_with("k", init_long, ttl=5.0)
+
+    t1 = threading.Thread(target=thread_short)
+    t2 = threading.Thread(target=thread_long)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    # Both threads get the same value (whichever initializer won the race)
+    assert results["short"] == results["long"]
+
+    # The value is cached
+    assert cache.get("k") == results["short"]
+
+    # Wait for the shorter TTL to expire
+    sleep(0.25)
+
+    # The entry should have expired only if the winning initializer had the short TTL.
+    # Regardless of which thread won, the TTL of the winner is what counts —
+    # the loser's TTL parameter is ignored entirely.
+    winner_value = results["short"]
+    after = cache.get("k")
+
+    if winner_value == "short":
+        # short-TTL thread won → entry expired
+        assert after is None
+    else:
+        # long-TTL thread won → entry still alive
+        assert after == winner_value
+
+
+@pytest.mark.parametrize("global_ttl", [None, 20.0], ids=["no_global_ttl", "with_global_ttl"])
+def test_eviction_listener_per_entry_ttl_expired(global_ttl):
+    """Per-entry TTL fires the eviction listener with cause='expired' regardless
+    of whether the cache has a global TTL. The notification is delivered lazily
+    during subsequent cache operations after the per-entry deadline passes."""
+    events = []
+
+    def listener(key, value, cause):
+        events.append((key, value, cause))
+
+    kwargs = {"eviction_listener": listener}
+    if global_ttl is not None:
+        kwargs["ttl"] = global_ttl
+
+    cache = moka_py.Moka(128, **kwargs)
+    cache.set("k", "val", ttl=1.0)
+
+    assert cache.get("k") == "val"
+    sleep(1.1)
+    assert cache.get("k") is None
+
+    # A single cache operation is enough to deliver the pending notification
+    cache.set("other", "value")
+
+    expired = [(k, v) for k, v, c in events if c == "expired" and k == "k"]
+    assert len(expired) == 1, f"expected 'expired' event for 'k' after per-entry TTL, got: {events}"
+    assert expired[0] == ("k", "val")
