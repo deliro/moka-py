@@ -3,6 +3,11 @@ name: "WebAssembly"
 on:
   workflow_call:
 
+env:
+  ○_○: &rust-nightly "nightly-2026-08-02"
+  #
+  \^_^\: &is_pull_request ${{ github.event_name == 'pull_request' }}
+
 jobs:
   wasm:
     name: "wasm32-unknown-emscripten / python ${{ matrix.platform.python-version }}"
@@ -18,7 +23,7 @@ jobs:
             pyodide-version: "0.29.4"
             pyemscripten-version: "2025_0"
             emsdk-version: "4.0.9"
-            rust-toolchain: "nightly-2026-06-19"
+            rust-toolchain: *rust-nightly
             rustflags: >-
               -C link-arg=-sSIDE_MODULE=2
               -C link-arg=-sWASM_BIGINT
@@ -32,7 +37,7 @@ jobs:
             pyodide-version: "314.0.0"
             pyemscripten-version: "2026_0"
             emsdk-version: "5.0.3"
-            rust-toolchain: "nightly-2026-06-19"
+            rust-toolchain: *rust-nightly
             rustflags: >-
               -C link-arg=-sSIDE_MODULE=2
               -C link-arg=-sWASM_BIGINT
@@ -41,12 +46,12 @@ jobs:
               -C symbol-mangling-version=v0
 
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: "Install node"
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "26"
 
@@ -56,9 +61,9 @@ jobs:
           version: ${{ matrix.platform.emsdk-version }}
 
       - name: "Install uv"
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          enable-cache: ${{ github.event_name == 'pull_request' }}
+          enable-cache: *is_pull_request
 
       - name: "Build WASM wheel"
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
@@ -68,7 +73,7 @@ jobs:
         with:
           container: off
           rust-toolchain: ${{ matrix.platform.rust-toolchain }}
-          sccache: ${{ github.event_name == 'pull_request' }}
+          sccache: *is_pull_request
           args: >-
             --out dist
             --release

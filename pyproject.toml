@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.14.1,<2.0"]
+requires = ["maturin == 1.14.1"]
 build-backend = "maturin"
 
 [tool.maturin]
@@ -9,7 +9,7 @@ module-name = "moka_py._moka_py"
 [project]
 name = "moka-py"
 description = "A high performance caching library for Python written in Rust"
-requires-python = ">=3.10"
+requires-python = ">= 3.10"
 readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -34,24 +34,24 @@ Issues = "https://github.com/deliro/moka-py/issues"
 
 [dependency-groups]
 maturin = [
-    "maturin >= 1.14.1 ; sys_platform != 'linux'",
-    "maturin[patchelf] >= 1.14.1 ; sys_platform == 'linux'",
+    "maturin == 1.14.1 ; sys_platform != 'linux'",
+    "maturin[patchelf] == 1.14.1 ; sys_platform == 'linux'",
 ]
-pytest = ["pytest>=8.3.3"]
+pytest = ["pytest == 9.1.1"]
 ci = [
     { include-group = "maturin" },
     { include-group = "pytest" },
-    "pytest-asyncio>=0.25.0",
+    "pytest-asyncio == 1.4.0",
 ]
 wasm-test = [
     { include-group = "pytest" },
-    "pytest-pyodide >= 0.59.2",
-    "pytest-httpserver >= 1.1.5",
+    "pytest-pyodide == 0.59.2",
+    "pytest-httpserver == 1.1.5",
 ]
 dev = [
     { include-group = "ci" },
-    "pytest-benchmark>=5.1.0",
-    "ruff>=0.12.12",
+    "pytest-benchmark == 5.2.3",
+    "ruff == 0.16.1",
 ]
 
 [tool.uv.dependency-groups]
