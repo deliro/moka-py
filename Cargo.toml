@@ -1,20 +1,56 @@
 [package]
 name = "moka-py"
-version = "0.3.0"
-edition = "2021"
+version = "0.4.0"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "moka_py"
+name = "_moka_py"
 crate-type = ["cdylib"]
 
 [dependencies]
 ahash = "0.8.12"
-moka = { version = "0.12", features = ["sync"] }
-pyo3 = { version = "0.26", features = ["generate-import-lib"] }
+pyo3 = "0.29.1"
+moka = {
+    version = "0.12.15",
+    features = ["sync"],
+}
+
+# mimalloc v3
+[target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.dependencies.mimalloc]
+optional = true
+version = "=0.1.52"
+features = [
+    "override",
+    "local_dynamic_tls",
+]
+
+[target.'cfg(target_os = "macos")'.dependencies.mimalloc]
+optional = true
+version = "=0.1.52"
+# Do not enable mimalloc's "override" feature on macOS.
+#
+# It installs process-wide malloc interposition and replaces macOS malloc zone/fork
+# hooks when the extension is imported via dlopen. That breaks fork-based subprocess
+# spawning, e.g., asyncio/playwright can fail.
+features = [
+    "local_dynamic_tls",
+]
+
+[target.'cfg(target_os = "windows")'.dependencies.mimalloc]
+optional = true
+version = "=0.1.52"
+features = [
+    "win_direct_tls",
+]
 
 [profile.release]
 lto = true
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+[features]
+default = []
+mimalloc = ["dep:mimalloc"]
+android = ["pyo3/abi3-py310"]

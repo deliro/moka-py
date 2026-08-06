@@ -1,23 +1,29 @@
 [build-system]
-requires = ["maturin>=1.7,<2.0"]
+requires = ["maturin == 1.14.1"]
 build-backend = "maturin"
+
+[tool.maturin]
+python-source = "py-src"
+module-name = "moka_py._moka_py"
 
 [project]
 name = "moka-py"
 description = "A high performance caching library for Python written in Rust"
-requires-python = ">=3.9"
+requires-python = ">= 3.10"
 readme = "README.md"
 classifiers = [
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
-  "Typing :: Typed",
-  "Programming Language :: Rust",
-  "Programming Language :: Python :: Implementation :: CPython",
-  "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Typing :: Typed",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
 
@@ -26,17 +32,30 @@ Homepage = "https://github.com/deliro/moka-py"
 Repository = "https://github.com/deliro/moka-py"
 Issues = "https://github.com/deliro/moka-py/issues"
 
-[tool.maturin]
-features = ["pyo3/extension-module"]
-
 [dependency-groups]
-dev = [
-  "maturin>=1.9.4",
-  "pytest-asyncio>=0.25.0",
-  "pytest-benchmark>=5.1.0",
-  "pytest>=8.3.3",
-  "ruff>=0.12.12",
+maturin = [
+    "maturin == 1.14.1 ; sys_platform != 'linux'",
+    "maturin[patchelf] == 1.14.1 ; sys_platform == 'linux'",
 ]
+pytest = ["pytest == 9.1.1"]
+ci = [
+    { include-group = "maturin" },
+    { include-group = "pytest" },
+    "pytest-asyncio == 1.4.0",
+]
+wasm-test = [
+    { include-group = "pytest" },
+    "pytest-pyodide == 0.59.2",
+    "pytest-httpserver == 1.1.5",
+]
+dev = [
+    { include-group = "ci" },
+    "pytest-benchmark == 5.2.3",
+    "ruff == 0.16.1",
+]
+
+[tool.uv.dependency-groups]
+wasm-test = { requires-python = ">=3.13" }
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules --doctest-continue-on-failure"
@@ -46,35 +65,35 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = [
-  "E",
-  "F",
-  "I",
-  "UP",
-  "B",
-  "C4",
-  "SIM",
-  "ISC",
-  "D",
-  "S",
-  "RUF",
-  "C90",
+    "E",
+    "F",
+    "I",
+    "UP",
+    "B",
+    "C4",
+    "SIM",
+    "ISC",
+    "D",
+    "S",
+    "RUF",
+    "C90",
 ]
 ignore = [
-  "E501", # line length handled by formatter
+    "E501", # line length handled by formatter
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
-  "S101", # asserts are fine in tests
-  "S311", # non-crypto randomness in tests
-  "D",    # ignore docstring requirements in tests
+    "S101", # asserts are fine in tests
+    "S311", # non-crypto randomness in tests
+    "D",    # ignore docstring requirements in tests
 ]
 "**/__init__.py" = [
-  "D104", # package-level docstring optional
+    "D104", # package-level docstring optional
 ]
 
 [tool.ruff.lint.mccabe]

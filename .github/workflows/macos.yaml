@@ -1,0 +1,64 @@
+name: "macOS"
+
+on:
+  workflow_call:
+
+env:
+  ○_○: &interpreters "3.10 3.11 3.12 3.13 3.14 3.14t 3.15 3.15t pypy3.11"
+  #
+  (^_^): &is_pull_request ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  macos:
+    name: "${{ matrix.platform.runner }} / ${{ matrix.platform.target }}"
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - {
+            # Intel Mac
+            runner: macos-26-intel,
+            target: x86_64-apple-darwin,
+            interpreter: *interpreters,
+          }
+          - {
+            # Apple Silicon M1-M4
+            runner: macos-latest,
+            target: aarch64-apple-darwin,
+            interpreter: *interpreters,
+          }
+          - {
+            # Universal binary (Intel + Apple Silicon)
+            runner: macos-latest,
+            target: universal2-apple-darwin,
+            interpreter: *interpreters,
+          }
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Install uv"
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: *is_pull_request
+
+      - name: "Build wheels"
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.platform.target }}
+          sccache: *is_pull_request
+          args: >-
+            --release
+            --out dist
+            --interpreter ${{ matrix.platform.interpreter }}
+            --features mimalloc
+            --compatibility pypi
+
+      - name: "Upload wheels"
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wheels-macos-${{ matrix.platform.target }}
+          path: dist

@@ -1,0 +1,102 @@
+name: "WebAssembly"
+
+on:
+  workflow_call:
+
+env:
+  ○_○: &rust-nightly "nightly-2026-08-02"
+  #
+  \^_^\: &is_pull_request ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  wasm:
+    name: "wasm32-unknown-emscripten / python ${{ matrix.platform.python-version }}"
+    runs-on: ubuntu-latest
+    # See: https://github.com/pyodide/pyodide/blob/main/metadata/pyodide-cross-build-environments-v2.json
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - python-version: "3.13"
+            # pyodide:
+            # 0.28.0a3 - 0.29.4 (emscripten 4.0.9)
+            pyodide-version: "0.29.4"
+            pyemscripten-version: "2025_0"
+            emsdk-version: "4.0.9"
+            rust-toolchain: *rust-nightly
+            rustflags: >-
+              -C link-arg=-sSIDE_MODULE=2
+              -C link-arg=-sWASM_BIGINT
+              -C relocation-model=pic
+              -Z link-native-libraries=no
+              -C symbol-mangling-version=v0
+
+          - python-version: "3.14"
+            # pyodide:
+            # 314.0.0a1 - 314.0.0 (emscripten 5.0.3)
+            pyodide-version: "314.0.0"
+            pyemscripten-version: "2026_0"
+            emsdk-version: "5.0.3"
+            rust-toolchain: *rust-nightly
+            rustflags: >-
+              -C link-arg=-sSIDE_MODULE=2
+              -C link-arg=-sWASM_BIGINT
+              -C relocation-model=pic
+              -Z link-native-libraries=no
+              -C symbol-mangling-version=v0
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Install node"
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26"
+
+      - name: "Install Emscripten SDK"
+        uses: mymindstorm/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16
+        with:
+          version: ${{ matrix.platform.emsdk-version }}
+
+      - name: "Install uv"
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: *is_pull_request
+
+      - name: "Build WASM wheel"
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_RUSTFLAGS: ${{ matrix.platform.rustflags }}
+          MATURIN_PYEMSCRIPTEN_PLATFORM_VERSION: ${{ matrix.platform.pyemscripten-version }}
+        with:
+          container: off
+          rust-toolchain: ${{ matrix.platform.rust-toolchain }}
+          sccache: *is_pull_request
+          args: >-
+            --out dist
+            --release
+            --target wasm32-unknown-emscripten
+            --interpreter python${{ matrix.platform.python-version }}
+            --compatibility pypi
+
+      - name: "Download pyodide"
+        uses: pyodide/pyodide-actions/download-pyodide@012fa537869d343726d01863a34b773fc4d96a14 # v2
+        with:
+          version: ${{ matrix.platform.pyodide-version }}
+          to: pyodide-dist
+
+      - name: "Test wasm wheel"
+        run: |
+          uv venv .venv --python ${{ matrix.platform.python-version }}
+          uv pip install --group wasm-test
+          source .venv/bin/activate
+          cp dist/*.whl pyodide-dist/
+          pytest tests/test_wasm.py --runtime node --dist-dir pyodide-dist -v --noconftest
+
+      - name: "Upload wasm wheel"
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wheels-wasm-${{ matrix.platform.python-version }}
+          path: dist

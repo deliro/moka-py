@@ -1,0 +1,129 @@
+name: "CI"
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - '*'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-fmt:
+    name: "cargo fmt"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable # zizmor: ignore[unpinned-uses]
+        with:
+          components: rustfmt
+
+      - run: cargo fmt -- --check
+
+  cargo-clippy:
+    name: "cargo clippy"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        if: github.event_name == 'pull_request'
+        with:
+          lookup-only: false # zizmor: ignore[cache-poisoning]
+
+      - uses: dtolnay/rust-toolchain@stable # zizmor: ignore[unpinned-uses]
+        with:
+          components: clippy
+
+      - run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::style -D clippy::perf
+
+  tests:
+    uses: ./.github/workflows/tests.yaml
+
+  manylinux:
+    needs: [ tests, cargo-fmt, cargo-clippy ]
+    uses: ./.github/workflows/manylinux.yaml
+
+  musllinux:
+    needs: [ tests, cargo-fmt, cargo-clippy ]
+    uses: ./.github/workflows/musllinux.yaml
+
+  windows:
+    needs: [ tests, cargo-fmt, cargo-clippy ]
+    uses: ./.github/workflows/windows.yaml
+
+  macos:
+    needs: [ tests, cargo-fmt, cargo-clippy ]
+    uses: ./.github/workflows/macos.yaml
+
+  wasm:
+    needs: [ tests, cargo-fmt, cargo-clippy ]
+    uses: ./.github/workflows/wasm.yaml
+
+  android:
+    needs: [ tests, cargo-fmt, cargo-clippy ]
+    uses: ./.github/workflows/android.yaml
+
+  build-sdist:
+    name: "build sdist"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Build sdist"
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          command: sdist
+          args: --out dist
+
+      - name: "Upload sdist"
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wheels-sdist
+          path: dist
+
+  release-pypi:
+    name: "Publish to PyPI"
+    runs-on: ubuntu-latest
+    needs: [manylinux, musllinux, windows, macos, wasm, android, build-sdist]
+    environment: pypi
+    permissions:
+      # Used to sign the release's artifacts and upload to PyPI using trusted publisher
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+
+      - name: "Install uv"
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: false
+
+      - name: "Validate PyPI publication"
+        run: uv publish 'wheels-*/*' --dry-run
+
+      - name: "Generate PyPI publish attestations"
+        if: github.ref_type == 'tag'
+        uses: astral-sh/attest-action@f589a42a7efb6fe400b4f400de60b4bc90390027 # v0.0.6
+        with:
+          paths: |
+            wheels-*/*.whl
+            wheels-*/*.tar.gz
+
+      - name: "Publish to PyPI"
+        if: github.ref_type == 'tag'
+        run: uv publish --trusted-publishing=always 'wheels-*/*'

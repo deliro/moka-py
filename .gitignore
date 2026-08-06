@@ -11,4 +11,4 @@ wheels/
 target/
 .idea/
 .python-version
-moka_py/moka_py.*.so
+py-src/moka_py/moka_py.*.so

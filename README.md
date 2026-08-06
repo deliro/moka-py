@@ -14,19 +14,40 @@
 
 ## Installation
 
-Install with `uv`:
+<p>
+  <img
+    src="https://thesvg.org/icons/uv/default.svg"
+    alt="uv"
+    height="14"
+  />
+  Using <a href="https://github.com/astral-sh/uv">uv</a>:
+</p>
 
 ```bash
 uv add moka-py
 ```
 
-Or with `poetry`:
+<p>
+  <img
+    src="https://thesvg.org/icons/poetry/default.svg"
+    alt="Poetry"
+    height="14"
+  />
+  Using <a href="https://github.com/python-poetry/poetry">poetry</a>:
+</p>
 
 ```bash
 poetry add moka-py
 ```
 
-Or with `pip`:
+<p>
+  <img
+    src="https://thesvg.org/icons/python/default.svg"
+    alt="Python"
+    height="14"
+  />
+  Using <a href="https://github.com/pypa/pip">pip</a>:
+</p>
 
 ```bash
 pip install moka-py

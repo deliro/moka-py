@@ -1,0 +1,100 @@
+name: "manylinux"
+
+on:
+  workflow_call:
+
+env:
+  ○_○: &interpreters "3.10 3.11 3.12 3.13 3.14 3.14t 3.15 3.15t pypy3.11"
+  #
+  (^_^): &is_pull_request ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  linux:
+    name: "${{ matrix.platform.runner }} / ${{ matrix.platform.target }}"
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Rust target `loongarch64-unknown-linux-gnu` is not supported by PyPI
+        platform:
+          - {
+            # AMD64
+            runner: ubuntu-latest,
+            target: x86_64-unknown-linux-gnu,
+            interpreter: *interpreters,
+            maturin-build-args: "--features mimalloc",
+          }
+          - {
+            # x86 (32-bit)
+            runner: ubuntu-latest,
+            target: i686-unknown-linux-gnu,
+            interpreter: *interpreters,
+            maturin-build-args: "--features mimalloc",
+          }
+          - {
+            # ARM64
+            runner: ubuntu-26.04-arm,
+            target: aarch64-unknown-linux-gnu,
+            interpreter: *interpreters,
+            maturin-build-args: "--features mimalloc",
+          }
+          - {
+            # ARMv7 (32-bit)
+            runner: ubuntu-latest,
+            target: armv7-unknown-linux-gnueabihf,
+            interpreter: *interpreters,
+          }
+          - {
+            # IBM System z (s390x)
+            runner: ubuntu-latest,
+            target: s390x-unknown-linux-gnu,
+            interpreter: *interpreters,
+          }
+          - {
+            # PowerPC64 Little Endian
+            runner: ubuntu-latest,
+            target: powerpc64le-unknown-linux-gnu,
+            interpreter: *interpreters,
+          }
+          - {
+            # PowerPC64 Big Endian
+            runner: ubuntu-latest,
+            target: powerpc64-unknown-linux-gnu,
+            interpreter: *interpreters,
+          }
+          - {
+            # RISC-V 64-bit
+            runner: ubuntu-latest,
+            target: riscv64gc-unknown-linux-gnu,
+            interpreter: *interpreters,
+            maturin-build-args: "--features mimalloc",
+          }
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Install uv"
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: *is_pull_request
+
+      - name: "Build wheels"
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.platform.target }}
+          sccache: *is_pull_request
+          manylinux: auto
+          args: >-
+            --release
+            --out dist
+            --interpreter ${{ matrix.platform.interpreter }}
+            ${{ matrix.platform.maturin-build-args || '' }}
+            --compatibility pypi
+
+      - name: "Upload wheels"
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wheels-linux-${{ matrix.platform.target }}
+          path: dist
