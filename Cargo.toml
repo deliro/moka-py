@@ -11,10 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 ahash = "0.8.12"
 pyo3 = "0.29.2"
-moka = {
-    version = "0.12.15",
-    features = ["sync"],
-}
+moka = { version = "0.12.15", features = ["sync"] }
 
 # mimalloc v3
 [target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.dependencies.mimalloc]
@@ -43,6 +40,82 @@ version = "=0.1.52"
 features = [
     "win_direct_tls",
 ]
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+# Groups
+all = "deny"
+pedantic = "deny"
+
+# Panics and unwinding
+panic = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+dbg_macro = "deny"
+todo = "deny"
+
+# Indexing
+indexing_slicing = "deny"
+
+# Casts
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_precision_loss = "deny"
+cast_sign_loss = "deny"
+cast_lossless = "deny"
+
+# From/Into
+fallible_impl_from = "deny"
+
+# Pattern matching
+match_same_arms = "deny"
+match_wildcard_for_single_variants = "deny"
+wildcard_enum_match_arm = "deny"
+
+# Control flow
+if_not_else = "deny"
+needless_continue = "deny"
+
+# Loops
+explicit_iter_loop = "deny"
+explicit_into_iter_loop = "deny"
+
+# Cloning
+redundant_clone = "deny"
+implicit_clone = "deny"
+clone_on_copy = "deny"
+
+# Unsafe
+undocumented_unsafe_blocks = "deny"
+
+# Strings
+str_to_string = "deny"
+string_add = "deny"
+string_lit_as_bytes = "deny"
+
+# Collections
+get_unwrap = "deny"
+
+# Functions
+fn_params_excessive_bools = "deny"
+must_use_candidate = "deny"
+unnecessary_wraps = "deny"
+
+# Error handling
+map_err_ignore = "deny"
+
+# Memory / allocations
+large_stack_arrays = "deny"
+rc_buffer = "deny"
+
+# Misc
+print_stdout = "deny"
+print_stderr = "deny"
+use_debug = "deny"
 
 [profile.release]
 lto = true

@@ -325,3 +325,64 @@ def test_eviction_listener_with_per_entry_ttl():
     assert cache.get("k") is None
 
     assert any(k == "k" and v == "v" for k, v, _ in evicted)
+
+
+@pytest.mark.parametrize(
+    ("method", "kwargs", "match"),
+    [
+        ("set", {"ttl": float("inf")}, "ttl must be positive"),
+        ("set", {"tti": float("inf")}, "tti must be positive"),
+        ("set", {"ttl": float("nan")}, "ttl must be positive"),
+        ("set", {"tti": float("nan")}, "tti must be positive"),
+        ("set", {"ttl": 1e30}, "ttl is out of range"),
+        ("get_with", {"ttl": float("inf")}, "ttl must be positive"),
+        ("get_with", {"tti": float("nan")}, "tti must be positive"),
+        ("get_with", {"ttl": 1e30}, "ttl is out of range"),
+    ],
+    ids=[
+        "set_ttl_inf",
+        "set_tti_inf",
+        "set_ttl_nan",
+        "set_tti_nan",
+        "set_ttl_overflow",
+        "get_with_ttl_inf",
+        "get_with_tti_nan",
+        "get_with_ttl_overflow",
+    ],
+)
+def test_non_finite_per_entry_duration(method, kwargs, match):
+    """Non-finite and absurdly large durations are rejected.
+
+    Previously these were silently accepted: the `f64 as u64` cast saturated,
+    so `inf` became a ~584942 year TTL instead of an error.
+    """
+    cache = moka_py.Moka(128)
+    with pytest.raises(ValueError, match=match):
+        if method == "set":
+            cache.set("k", "v", **kwargs)
+        else:
+            cache.get_with("k", lambda: "v", **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"ttl": float("inf")}, "ttl must be positive"),
+        ({"tti": float("nan")}, "tti must be positive"),
+        ({"ttl": 1e30}, "ttl is out of range"),
+    ],
+    ids=["ctor_ttl_inf", "ctor_tti_nan", "ctor_ttl_overflow"],
+)
+def test_non_finite_cache_wide_duration(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        moka_py.Moka(128, **kwargs)
+
+
+def test_class_getitem_returns_the_class():
+    """`Moka[K, V]` is usable as a type annotation and yields the class itself."""
+    assert moka_py.Moka[str, int] is moka_py.Moka
+    assert moka_py.Moka.__class_getitem__(int) is moka_py.Moka
+
+    cache = moka_py.Moka[str, int](128)
+    cache.set("k", 1)
+    assert cache.get("k") == 1

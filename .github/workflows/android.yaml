@@ -41,7 +41,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           sccache: *is_pull_request
           args: >
-            --release 
+            --release
             --out dist
             --features android
             --compatibility pypi

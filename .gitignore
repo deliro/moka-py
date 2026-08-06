@@ -6,9 +6,16 @@ dist/
 wheels/
 *.egg-info
 
+# Compiled extension modules (maturin develop builds these in-place).
+# Matched by extension rather than by module name so a rename of the native
+# module does not silently un-ignore them.
+*.so
+*.pyd
+*.dylib
+
 # Virtual environments
 .venv
+.venv*/
 target/
 .idea/
 .python-version
-py-src/moka_py/moka_py.*.so

@@ -1,0 +1,49 @@
+name: "PR title"
+
+# The repository merges pull requests with squash, so the PR title becomes the
+# commit subject on master — and that is what release-please parses to decide
+# the next version. Enforcing it here keeps the changelog honest.
+# Deliberately `pull_request`, not `pull_request_target`: the title is read
+# from the event payload, so no elevated token or checkout is needed.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  conventional-title:
+    name: "conventional commit title"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@0723387faaf9b38adef4775cd42cfd5155ed6017 # v5.5.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Keep in sync with changelog-sections in release-please-config.json
+          types: |
+            feat
+            fix
+            perf
+            deps
+            revert
+            docs
+            build
+            refactor
+            ci
+            chore
+            test
+            style
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+[^.]$
+          subjectPatternError: |
+            The subject "{subject}" is invalid: it must start with a lowercase
+            letter and must not end with a period.

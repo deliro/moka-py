@@ -1,0 +1,52 @@
+version: 2
+
+updates:
+  # Rust dependencies (pyo3, moka, mimalloc, ...)
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    # Supply-chain guard: ignore freshly published versions for a week so a
+    # compromised release is not picked up on day zero.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      cargo:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Python tooling used by CI and the dev environment
+  - package-ecosystem: uv
+    directory: "/"
+    schedule:
+      interval: weekly
+    # Supply-chain guard: ignore freshly published versions for a week so a
+    # compromised release is not picked up on day zero.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Keeps the SHA pins in .github/workflows/ current
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    # Supply-chain guard: ignore freshly published versions for a week so a
+    # compromised release is not picked up on day zero.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
