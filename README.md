@@ -297,7 +297,7 @@ def charge_money(from_user_id: int, amount: Decimal) -> None:
     ...
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     request_processing = threading.Thread(target=process_request, args=("/user/info/123", 123))
     money_charging = threading.Thread(target=charge_money, args=(123, Decimal("3.14")))
     request_processing.start()
@@ -335,11 +335,7 @@ from moka_py import Moka
 from time import sleep
 
 
-def key_evicted(
-    k: str,
-    v: list[int],
-    cause: Literal["explicit", "size", "expired", "replaced"]
-):
+def key_evicted(k: str, v: list[int], cause: Literal["explicit", "size", "expired", "replaced"]):
     events.append((k, v, cause))
 
 

@@ -11,10 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 ahash = "0.8.12"
 pyo3 = "0.29.2"
-moka = { 
-    version = "0.12.15",
-    features = ["sync"],
-}
+moka = { version = "0.12.15", features = ["sync"] }
 
 # mimalloc v3
 [target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.dependencies.mimalloc]

@@ -8,6 +8,9 @@ env:
   #
   (^_^): &is_pull_request ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   musllinux:
     name: "${{ matrix.platform.runner }} / ${{ matrix.platform.target }}"
