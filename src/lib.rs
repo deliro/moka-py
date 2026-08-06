@@ -50,7 +50,7 @@ mod moka_py {
     impl Hash for AnyKey {
         #[inline]
         fn hash<H: Hasher>(&self, state: &mut H) {
-            state.write_isize(self.py_hash)
+            state.write_isize(self.py_hash);
         }
     }
 
@@ -91,18 +91,22 @@ mod moka_py {
         }
     }
 
+    /// Convert a number of seconds coming from Python into a `Duration`.
+    ///
+    /// Rejects zero, negative, NaN and infinite values explicitly instead of
+    /// relying on the saturating behaviour of a `f64 as u64` cast, which
+    /// silently turned an absurd value such as `1e30` into a ~584942 year TTL.
     #[inline]
     fn parse_duration(value: Option<f64>, name: &str) -> PyResult<Option<Duration>> {
-        match value {
-            Some(v) => {
-                let micros = (v * 1_000_000.0) as u64;
-                if micros == 0 {
-                    return Err(PyValueError::new_err(format!("{name} must be positive")));
-                }
-                Ok(Some(Duration::from_micros(micros)))
-            }
-            None => Ok(None),
+        let Some(seconds) = value else {
+            return Ok(None);
+        };
+        if !seconds.is_finite() || seconds <= 0.0 {
+            return Err(PyValueError::new_err(format!("{name} must be positive")));
         }
+        let duration = Duration::try_from_secs_f64(seconds)
+            .map_err(|e| PyValueError::new_err(format!("{name} is out of range: {e}")))?;
+        Ok(Some(duration))
     }
 
     #[derive(Clone)]
@@ -190,20 +194,12 @@ mod moka_py {
                 .expire_after(PerEntryExpiry)
                 .eviction_policy(policy.into());
 
-            if let Some(ttl) = ttl {
-                let ttl_micros = (ttl * 1_000_000.0) as u64;
-                if ttl_micros == 0 {
-                    return Err(PyValueError::new_err("ttl must be positive"));
-                }
-                builder = builder.time_to_live(Duration::from_micros(ttl_micros));
+            if let Some(time_to_live) = parse_duration(ttl, "ttl")? {
+                builder = builder.time_to_live(time_to_live);
             }
 
-            if let Some(tti) = tti {
-                let tti_micros = (tti * 1_000_000.0) as u64;
-                if tti_micros == 0 {
-                    return Err(PyValueError::new_err("tti must be positive"));
-                }
-                builder = builder.time_to_idle(Duration::from_micros(tti_micros));
+            if let Some(time_to_idle) = parse_duration(tti, "tti")? {
+                builder = builder.time_to_idle(time_to_idle);
             }
 
             if let Some(listener) = eviction_listener {
@@ -212,7 +208,7 @@ mod moka_py {
                         let key = k.as_ref().obj.clone_ref(py);
                         let value = v.value.as_ref().clone_ref(py);
                         if let Err(e) = listener.call1(py, (key, value, cause_to_str(cause))) {
-                            e.restore(py)
+                            e.restore(py);
                         }
                     });
                 };
@@ -225,11 +221,8 @@ mod moka_py {
         }
 
         #[classmethod]
-        fn __class_getitem__(
-            cls: &Bound<'_, PyType>,
-            _key: &Bound<'_, PyAny>,
-        ) -> PyResult<Py<PyAny>> {
-            Ok(cls.clone().into_any().unbind())
+        fn __class_getitem__(cls: &Bound<'_, PyType>, _key: &Bound<'_, PyAny>) -> Py<PyAny> {
+            cls.clone().into_any().unbind()
         }
 
         #[pyo3(signature = (key, value, ttl=None, tti=None))]
@@ -242,12 +235,12 @@ mod moka_py {
             tti: Option<f64>,
         ) -> PyResult<()> {
             let hashable_key = AnyKey::new_with_gil(key, py)?;
-            let per_entry_ttl = parse_duration(ttl, "ttl")?;
-            let per_entry_tti = parse_duration(tti, "tti")?;
+            let time_to_live = parse_duration(ttl, "ttl")?;
+            let time_to_idle = parse_duration(tti, "tti")?;
             let wrapper = ValueWrapper {
                 value: Arc::new(value),
-                per_entry_ttl,
-                per_entry_tti,
+                per_entry_ttl: time_to_live,
+                per_entry_tti: time_to_idle,
                 created_at: Instant::now(),
             };
             self.0.insert(hashable_key, wrapper);
@@ -278,15 +271,15 @@ mod moka_py {
             tti: Option<f64>,
         ) -> PyResult<Py<PyAny>> {
             let hashable_key = AnyKey::new_with_gil(key, py)?;
-            let per_entry_ttl = parse_duration(ttl, "ttl")?;
-            let per_entry_tti = parse_duration(tti, "tti")?;
+            let time_to_live = parse_duration(ttl, "ttl")?;
+            let time_to_idle = parse_duration(tti, "tti")?;
             py.detach(|| {
-                self.0.try_get_with(hashable_key, || {
+                self.0.try_get_with(hashable_key, move || {
                     Python::attach(|py| {
                         initializer.call0(py).map(|v| ValueWrapper {
                             value: Arc::new(v),
-                            per_entry_ttl,
-                            per_entry_tti,
+                            per_entry_ttl: time_to_live,
+                            per_entry_tti: time_to_idle,
                             created_at: Instant::now(),
                         })
                     })
