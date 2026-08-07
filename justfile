@@ -20,6 +20,10 @@ audit-py:
 
 audit: deny audit-py
 
+# Test run with coverage, same invocation CI uses
+coverage: dev
+    uv run pytest tests/ --ignore=tests/test_benches.py --ignore=tests/test_wasm.py --cov --cov-report=term --cov-report=xml
+
 clippy: lint
 
 fmt-py:
