@@ -117,15 +117,15 @@ async def test_different_entries_different_ttls():
         # second TTL shorter, re-set before expiry
         ({"ttl": 0.8}, {"ttl": 0.2}, 0.2, 0.1, 0.3),
         # first TTL, second switches to TTI, re-set before expiry
-        ({"ttl": 0.3}, {"tti": 0.2}, 0.2, 0.1, 0.3),
+        ({"ttl": 0.3}, {"tti": 0.2}, 0.2, 0.1, 0.4),
         # first TTL, second switches to TTL+TTI, re-set before expiry
-        ({"ttl": 0.3}, {"ttl": 0.8, "tti": 0.2}, 0.2, 0.1, 0.3),
+        ({"ttl": 0.3}, {"ttl": 0.8, "tti": 0.2}, 0.2, 0.1, 0.4),
         # second TTL same as first, re-set AFTER first expired
         ({"ttl": 0.2}, {"ttl": 0.3}, 0.3, 0.2, 0.4),
         # second TTL shorter, re-set AFTER first expired
         ({"ttl": 0.2}, {"ttl": 0.15}, 0.3, 0.1, 0.2),
         # first TTL, second switches to TTI, re-set AFTER first expired
-        ({"ttl": 0.2}, {"tti": 0.2}, 0.3, 0.1, 0.3),
+        ({"ttl": 0.2}, {"tti": 0.2}, 0.3, 0.1, 0.4),
     ],
     ids=[
         "same_ttl_before_expiry",
@@ -151,6 +151,8 @@ async def test_re_set_resets_deadline(
     await asyncio.sleep(alive_after_re_set)
     assert cache.get("k") == "v2", "entry should still be alive"
 
+    # NB: the "still alive" get above re-bumps TTI, so for the tti cases this
+    # remaining sleep must exceed the TTI rather than equal it exactly.
     await asyncio.sleep(dead_after_re_set - alive_after_re_set)
     assert cache.get("k") is None, "entry should have expired"
 
