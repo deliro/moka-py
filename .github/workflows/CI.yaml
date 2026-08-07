@@ -14,30 +14,29 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  cargo-fmt:
-    name: "cargo fmt"
+  lint:
+    name: "lint & format"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable # zizmor: ignore[unpinned-uses]
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          components: rustfmt
+          python-version: "3.13"
 
-      - run: cargo fmt -- --check
-
-  cargo-clippy:
-    name: "cargo clippy"
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: "Install uv"
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          persist-credentials: false
+          # This workflow still contains the publishing job, so caching here
+          # would be a cache-poisoning vector.
+          enable-cache: false
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: github.event_name == 'pull_request'
@@ -46,35 +45,40 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable # zizmor: ignore[unpinned-uses]
         with:
-          components: clippy
+          components: rustfmt, clippy
 
-      - run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::style -D clippy::perf
+      # The `lint-fmt` pre-commit hook shells out to `just`
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+
+      # Runs `just` (ruff check + format, cargo fmt, clippy) plus the
+      # file-hygiene, typos, taplo, actionlint and zizmor hooks.
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
 
   tests:
     uses: ./.github/workflows/tests.yaml
 
   manylinux:
-    needs: [ tests, cargo-fmt, cargo-clippy ]
+    needs: [ tests, lint ]
     uses: ./.github/workflows/manylinux.yaml
 
   musllinux:
-    needs: [ tests, cargo-fmt, cargo-clippy ]
+    needs: [ tests, lint ]
     uses: ./.github/workflows/musllinux.yaml
 
   windows:
-    needs: [ tests, cargo-fmt, cargo-clippy ]
+    needs: [ tests, lint ]
     uses: ./.github/workflows/windows.yaml
 
   macos:
-    needs: [ tests, cargo-fmt, cargo-clippy ]
+    needs: [ tests, lint ]
     uses: ./.github/workflows/macos.yaml
 
   wasm:
-    needs: [ tests, cargo-fmt, cargo-clippy ]
+    needs: [ tests, lint ]
     uses: ./.github/workflows/wasm.yaml
 
   android:
-    needs: [ tests, cargo-fmt, cargo-clippy ]
+    needs: [ tests, lint ]
     uses: ./.github/workflows/android.yaml
 
   build-sdist:

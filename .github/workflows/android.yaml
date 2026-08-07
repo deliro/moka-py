@@ -6,6 +6,9 @@ on:
 env:
   (^_^): &is_pull_request ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   android:
     name: "${{ matrix.platform.runner }} / ${{ matrix.platform.target }}"
@@ -41,7 +44,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           sccache: *is_pull_request
           args: >
-            --release 
+            --release
             --out dist
             --features android
             --compatibility pypi

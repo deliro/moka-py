@@ -8,6 +8,9 @@ env:
   #
   \^_^\: &is_pull_request ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   wasm:
     name: "wasm32-unknown-emscripten / python ${{ matrix.platform.python-version }}"

@@ -3,6 +3,9 @@ name: "tests"
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   tests:
     name: "${{ matrix.os }} / python ${{ matrix.python-version }}"

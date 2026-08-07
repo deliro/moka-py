@@ -66,6 +66,10 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+# The package lives in py-src/, so ruff's default `src = ["."]` fails to
+# recognise `moka_py` as first-party and isort merges it into the
+# third-party block. Only masked locally by a stale ./moka_py build dir.
+src = ["py-src", "tests"]
 
 [tool.ruff.lint]
 select = [
