@@ -80,6 +80,45 @@ jobs:
 
       - run: just audit-py
 
+  coverage:
+    name: "coverage"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Install uv"
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: ${{ github.event_name == 'pull_request' }}
+
+      - name: "Create and activate .venv"
+        run: |
+          uv venv .venv --python 3.13
+          echo ".venv/bin" >> "$GITHUB_PATH"
+          echo "PYO3_PYTHON=.venv/bin/python3" >> "$GITHUB_ENV"
+
+      - name: "Install dependencies"
+        run: uv pip install --group ci
+
+      - name: "Build and install the extension"
+        run: |
+          maturin build --out wheel --features mimalloc
+          uv pip install wheel/*.whl
+
+      - name: "Run tests with coverage"
+        run: pytest tests/ --ignore=tests/test_benches.py --ignore=tests/test_wasm.py --cov --cov-report=xml
+
+      - name: "Upload coverage to Codecov"
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: coverage.xml
+          fail_ci_if_error: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
   tests:
     uses: ./.github/workflows/tests.yaml
 
@@ -138,7 +177,7 @@ jobs:
   ci-ok:
     name: "CI ok"
     if: always()
-    needs: [lint, cargo-deny, pip-audit, tests, manylinux, musllinux, windows, macos, wasm, android, build-sdist]
+    needs: [lint, cargo-deny, pip-audit, coverage, tests, manylinux, musllinux, windows, macos, wasm, android, build-sdist]
     runs-on: ubuntu-latest
     steps:
       - name: "Fail if any dependency failed"

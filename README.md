@@ -1,5 +1,12 @@
 # moka-py
 
+[![CI](https://github.com/deliro/moka-py/actions/workflows/CI.yaml/badge.svg?branch=master)](https://github.com/deliro/moka-py/actions/workflows/CI.yaml)
+[![codecov](https://codecov.io/gh/deliro/moka-py/branch/master/graph/badge.svg)](https://codecov.io/gh/deliro/moka-py)
+[![PyPI](https://img.shields.io/pypi/v/moka-py.svg)](https://pypi.org/project/moka-py/)
+[![Python versions](https://img.shields.io/pypi/pyversions/moka-py.svg)](https://pypi.org/project/moka-py/)
+[![Downloads](https://img.shields.io/pypi/dm/moka-py.svg)](https://pypi.org/project/moka-py/)
+[![License](https://img.shields.io/pypi/l/moka-py.svg)](https://github.com/deliro/moka-py/blob/master/LICENSE)
+
 **moka-py** is a Python binding to the [Moka](https://github.com/moka-rs/moka) cache written in Rust. It brings Moka’s high-performance, feature‑rich caching to Python.
 
 ## Features

@@ -11,6 +11,8 @@ name = "moka-py"
 description = "A high performance caching library for Python written in Rust"
 requires-python = ">= 3.10"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
@@ -37,7 +39,7 @@ maturin = [
     "maturin == 1.14.1 ; sys_platform != 'linux'",
     "maturin[patchelf] == 1.14.1 ; sys_platform == 'linux'",
 ]
-pytest = ["pytest == 9.1.1"]
+pytest = ["pytest == 9.1.1", "pytest-cov == 7.1.0"]
 ci = [
     { include-group = "maturin" },
     { include-group = "pytest" },
@@ -105,3 +107,15 @@ max-complexity = 10
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.coverage.run]
+# source_pkgs, not source: `moka_py` is a package name. With plain `source`,
+# coverage resolves it against the working directory first, so a stale
+# ./moka_py build directory silently shadows the installed package and
+# nothing is measured.
+source_pkgs = ["moka_py"]
+
+[tool.coverage.paths]
+# The tests run against the installed wheel; map it back to the sources so
+# Codecov annotates py-src/ rather than site-packages.
+source = ["py-src/moka_py", "*/site-packages/moka_py"]
