@@ -8,6 +8,18 @@ lint-rust:
 
 lint: lint-py lint-rust
 
+# Supply-chain audits (same checks CI runs)
+deny:
+    cargo deny check advisories bans licenses sources
+
+# `uv export` already pins every transitive dependency, so --no-deps keeps
+# pip-audit from building an isolated resolution environment.
+audit-py:
+    uv export --no-emit-project --all-groups --format requirements-txt > /tmp/moka-py-requirements.txt
+    uvx pip-audit --strict --no-deps --disable-pip --requirement /tmp/moka-py-requirements.txt
+
+audit: deny audit-py
+
 clippy: lint
 
 fmt-py:
