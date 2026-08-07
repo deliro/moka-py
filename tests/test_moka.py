@@ -14,7 +14,10 @@ async def test_tti():
     moka.set("hello", value)
     assert moka.get("hello") is value
     assert moka.get("hello") is value
-    await asyncio.sleep(0.2)
+    # Sleep past the TTI rather than exactly up to it: asyncio.sleep only
+    # guarantees a lower bound, and a loaded runner can observe the entry
+    # a hair before it goes idle.
+    await asyncio.sleep(0.3)
     assert moka.get("hello") is None
 
 
@@ -43,11 +46,18 @@ def test_eviction():
     for key in keys:
         moka.set(key, key)
 
-    got = []
-    for key in keys:
-        v = moka.get(key)
-        if v is not None:
-            got.append(v)
+    # moka evicts asynchronously: writes go through an internal buffer, so the
+    # cache can transiently hold more than max_capacity. Reads drive that
+    # maintenance, so poll until the count converges instead of racing it.
+    deadline = monotonic() + 5.0
+    while True:
+        got = []
+        for key in keys:
+            v = moka.get(key)
+            if v is not None:
+                got.append(v)
+        if len(got) == size or monotonic() > deadline:
+            break
 
     assert len(got) == size
 
