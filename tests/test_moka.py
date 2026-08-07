@@ -43,11 +43,18 @@ def test_eviction():
     for key in keys:
         moka.set(key, key)
 
-    got = []
-    for key in keys:
-        v = moka.get(key)
-        if v is not None:
-            got.append(v)
+    # moka evicts asynchronously: writes go through an internal buffer, so the
+    # cache can transiently hold more than max_capacity. Reads drive that
+    # maintenance, so poll until the count converges instead of racing it.
+    deadline = monotonic() + 5.0
+    while True:
+        got = []
+        for key in keys:
+            v = moka.get(key)
+            if v is not None:
+                got.append(v)
+        if len(got) == size or monotonic() > deadline:
+            break
 
     assert len(got) == size
 
