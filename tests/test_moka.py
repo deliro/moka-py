@@ -14,7 +14,10 @@ async def test_tti():
     moka.set("hello", value)
     assert moka.get("hello") is value
     assert moka.get("hello") is value
-    await asyncio.sleep(0.2)
+    # Sleep past the TTI rather than exactly up to it: asyncio.sleep only
+    # guarantees a lower bound, and a loaded runner can observe the entry
+    # a hair before it goes idle.
+    await asyncio.sleep(0.3)
     assert moka.get("hello") is None
 
 
