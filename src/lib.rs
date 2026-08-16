@@ -12,7 +12,11 @@ mod moka_py {
     };
 
     use moka::{Expiry, notification::RemovalCause, policy::EvictionPolicy, sync::Cache};
-    use pyo3::{exceptions::PyValueError, prelude::*, types::PyType};
+    use pyo3::{
+        exceptions::{PyTypeError, PyValueError},
+        prelude::*,
+        types::{PyInt, PyType},
+    };
 
     #[pymodule_export]
     const _VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -115,6 +119,45 @@ mod moka_py {
         per_entry_ttl: Option<Duration>,
         per_entry_tti: Option<Duration>,
         created_at: Instant,
+        weight: u32,
+    }
+
+    /// Compute the entry weight by calling the user-supplied weigher eagerly,
+    /// on the calling thread, before the entry enters moka (see ADR-0001).
+    /// Without a weigher every entry weighs 1, i.e. capacity = entry count.
+    fn compute_weight(
+        py: Python,
+        weigher: Option<&Py<PyAny>>,
+        key: &Py<PyAny>,
+        value: &Py<PyAny>,
+    ) -> PyResult<u32> {
+        let Some(weigher) = weigher else {
+            return Ok(1);
+        };
+        let result = weigher.call1(py, (key, value))?;
+        let bound = result.bind(py);
+        if !bound.is_instance_of::<PyInt>() {
+            return Err(PyTypeError::new_err(format!(
+                "weigher must return an int, got {}",
+                bound.get_type().name()?
+            )));
+        }
+        match bound.extract::<u64>() {
+            // Weights above u32::MAX clamp: "this entry is enormous" is the
+            // honest reading, and moka cannot represent anything larger anyway.
+            Ok(v) => Ok(u32::try_from(v).unwrap_or(u32::MAX)),
+            // An int that does not fit u64 is either negative (a bug in the
+            // weigher, refuse loudly) or astronomically large (clamp).
+            Err(_) => {
+                if bound.lt(0)? {
+                    Err(PyValueError::new_err(
+                        "weigher must return a non-negative int",
+                    ))
+                } else {
+                    Ok(u32::MAX)
+                }
+            }
+        }
     }
 
     struct PerEntryExpiry;
@@ -175,24 +218,31 @@ mod moka_py {
     }
 
     #[pyclass]
-    struct Moka(Cache<AnyKey, ValueWrapper, ahash::RandomState>);
+    struct Moka {
+        cache: Cache<AnyKey, ValueWrapper, ahash::RandomState>,
+        weigher: Option<Py<PyAny>>,
+    }
 
     #[pymethods]
     impl Moka {
         #[new]
-        #[pyo3(signature = (capacity, ttl=None, tti=None, eviction_listener=None, policy="tiny_lfu"))]
+        #[pyo3(signature = (capacity, ttl=None, tti=None, eviction_listener=None, policy="tiny_lfu", weigher=None))]
         fn new(
             capacity: u64,
             ttl: Option<f64>,
             tti: Option<f64>,
             eviction_listener: Option<Py<PyAny>>,
             policy: &str,
+            weigher: Option<Py<PyAny>>,
         ) -> PyResult<Self> {
             let policy = policy.parse::<Policy>().map_err(PyValueError::new_err)?;
             let mut builder = Cache::builder()
                 .max_capacity(capacity)
                 .expire_after(PerEntryExpiry)
-                .eviction_policy(policy.into());
+                .eviction_policy(policy.into())
+                // The weight is precomputed on the calling thread (ADR-0001);
+                // moka only ever reads the stored field, no Python involved.
+                .weigher(|_k: &AnyKey, v: &ValueWrapper| v.weight);
 
             if let Some(time_to_live) = parse_duration(ttl, "ttl")? {
                 builder = builder.time_to_live(time_to_live);
@@ -215,9 +265,10 @@ mod moka_py {
                 builder = builder.eviction_listener(Box::new(listen_fn));
             }
 
-            Ok(Moka(
-                builder.build_with_hasher(ahash::RandomState::default()),
-            ))
+            Ok(Moka {
+                cache: builder.build_with_hasher(ahash::RandomState::default()),
+                weigher,
+            })
         }
 
         #[classmethod]
@@ -234,6 +285,7 @@ mod moka_py {
             ttl: Option<f64>,
             tti: Option<f64>,
         ) -> PyResult<()> {
+            let weight = compute_weight(py, self.weigher.as_ref(), &key, &value)?;
             let hashable_key = AnyKey::new_with_gil(key, py)?;
             let time_to_live = parse_duration(ttl, "ttl")?;
             let time_to_idle = parse_duration(tti, "tti")?;
@@ -242,8 +294,9 @@ mod moka_py {
                 per_entry_ttl: time_to_live,
                 per_entry_tti: time_to_idle,
                 created_at: Instant::now(),
+                weight,
             };
-            self.0.insert(hashable_key, wrapper);
+            self.cache.insert(hashable_key, wrapper);
             Ok(())
         }
 
@@ -255,7 +308,7 @@ mod moka_py {
             default: Option<Py<PyAny>>,
         ) -> PyResult<Option<Py<PyAny>>> {
             let hashable_key = AnyKey::new_with_gil(key, py)?;
-            let value = self.0.get(&hashable_key);
+            let value = self.cache.get(&hashable_key);
             Ok(value
                 .map(|v| v.value.clone_ref(py))
                 .or_else(|| default.map(|v| v.clone_ref(py))))
@@ -270,17 +323,22 @@ mod moka_py {
             ttl: Option<f64>,
             tti: Option<f64>,
         ) -> PyResult<Py<PyAny>> {
+            let weigher = self.weigher.as_ref().map(|w| w.clone_ref(py));
+            let weigher_key = key.clone_ref(py);
             let hashable_key = AnyKey::new_with_gil(key, py)?;
             let time_to_live = parse_duration(ttl, "ttl")?;
             let time_to_idle = parse_duration(tti, "tti")?;
             py.detach(|| {
-                self.0.try_get_with(hashable_key, move || {
-                    Python::attach(|py| {
-                        initializer.call0(py).map(|v| ValueWrapper {
+                self.cache.try_get_with(hashable_key, move || {
+                    Python::attach(|py| -> PyResult<ValueWrapper> {
+                        let v = initializer.call0(py)?;
+                        let weight = compute_weight(py, weigher.as_ref(), &weigher_key, &v)?;
+                        Ok(ValueWrapper {
                             value: Arc::new(v),
                             per_entry_ttl: time_to_live,
                             per_entry_tti: time_to_idle,
                             created_at: Instant::now(),
+                            weight,
                         })
                     })
                 })
@@ -297,18 +355,26 @@ mod moka_py {
             default: Option<Py<PyAny>>,
         ) -> PyResult<Option<Py<PyAny>>> {
             let hashable_key = AnyKey::new_with_gil(key, py)?;
-            let removed = self.0.remove(&hashable_key);
+            let removed = self.cache.remove(&hashable_key);
             Ok(removed
                 .map(|v| v.value.clone_ref(py))
                 .or_else(|| default.map(|v| v.clone_ref(py))))
         }
 
         fn clear(&self, py: Python) {
-            py.detach(|| self.0.invalidate_all());
+            py.detach(|| self.cache.invalidate_all());
         }
 
         fn count(&self, py: Python) -> u64 {
-            py.detach(|| self.0.entry_count())
+            py.detach(|| self.cache.entry_count())
+        }
+
+        fn run_pending_tasks(&self, py: Python) {
+            py.detach(|| self.cache.run_pending_tasks());
+        }
+
+        fn weighted_size(&self, py: Python) -> u64 {
+            py.detach(|| self.cache.weighted_size())
         }
     }
 }

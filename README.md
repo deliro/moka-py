@@ -16,6 +16,7 @@
 - **TTI:** Evicts entries after a configurable time to idle (TTI).
 - **Per-entry TTL / TTI:** Override the cache-wide TTL or TTI on individual entries.
 - **Size-based eviction:** Removes items when capacity is exceeded using TinyLFU or LRU.
+- **Weight-based eviction:** Optionally bound the cache by total entry weight (e.g. bytes) via a `weigher`.
 - **Concurrency:** Optimized for high-throughput, concurrent access.
 - **Fully typed:** `mypy` and `pyright` friendly.
 
@@ -72,6 +73,7 @@ pip install moka-py
     - [Coalesce concurrent calls (wait_concurrent)](#coalesce-concurrent-calls-wait_concurrent)
     - [Eviction listener](#eviction-listener)
     - [Removing entries](#removing-entries)
+    - [Size-aware cache (weigher)](#size-aware-cache-weigher)
 - [How it works](#how-it-works)
 - [Eviction policies](#eviction-policies)
 - [Performance](#performance)
@@ -398,6 +400,64 @@ assert c.remove("hello", default="WAS_NOT_SET") is None  # None was set explicit
 # Now the entry "hello" does not exist, so `default` is returned
 assert c.remove("hello", default="WAS_NOT_SET") == "WAS_NOT_SET"
 ```
+
+### Size-aware cache (weigher)
+
+`capacity` bounds the **total weight** of all entries. Every entry weighs 1 by default —
+that's why `capacity` normally reads as "maximum number of entries". Pass a `weigher` —
+a callable `(key, value) -> int` — to weigh entries yourself, in any unit you like;
+bytes are typical:
+
+```python
+from moka_py import Moka
+
+
+# A 100-character budget for string values
+c = Moka(100, weigher=lambda k, v: len(v))
+c.set("a", "x" * 40)
+c.set("b", "y" * 40)
+
+# Maintenance (evictions, expirations) runs lazily. Force it when you need
+# accurate numbers — e.g. in tests or metrics:
+c.run_pending_tasks()
+assert c.weighted_size() == 80
+assert c.count() == 2
+```
+
+The weigher is called once per insert, on the calling thread, and its result is fixed
+for that entry (replacing a value re-weighs it). The contract:
+
+- The result must be a non-negative `int`; a negative result raises `ValueError`,
+  a non-int raises `TypeError`.
+- `0` is allowed and means the entry spends no capacity budget.
+- Values above `2**32 - 1` are clamped to that maximum.
+- If the weigher raises, the insert fails with that exception and the cache is left
+  unchanged (for `get_with`, nothing is cached and all concurrent waiters see the error).
+
+`@cached` accepts a `weigher` as well — `maxsize` bounds the total weight the same way.
+The key passed to the weigher is an opaque hashable object built from the call arguments,
+so weigh the value:
+
+```python
+from moka_py import cached
+
+
+@cached(maxsize=1_000_000, weigher=lambda k, v: len(v))
+def render(name: str) -> str:
+    return f"<h1>Hello, {name}!</h1>"
+
+
+assert render("world") == "<h1>Hello, world!</h1>"
+```
+
+With `wait_concurrent=True` on an **async** function, a weigher changes what the cache
+stores: finished results instead of in-flight `asyncio.Task`s (a Task has no result to
+weigh yet). Concurrent calls still share one computation; a failed computation is not
+cached. One asymmetry to be aware of: if the *weigher* raises, the error goes to the call
+that started the computation, while concurrent waiters still receive the computed value.
+
+`weighted_size()` and `run_pending_tasks()` work without a weigher too: since every entry
+weighs 1, `weighted_size()` equals `count()`.
 
 ## How it works
 
