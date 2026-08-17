@@ -19,3 +19,6 @@ wheels/
 target/
 .idea/
 .python-version
+
+# Machine-local benchmark baselines (ADR-0003)
+.benchmarks/

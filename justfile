@@ -43,8 +43,26 @@ dev:
 test: dev
     uv run pytest tests/ -v --ignore=tests/test_benches.py
 
+# PYTHONHASHSEED=0 removes CPython's per-process str/tuple hash randomization,
+# one of the two sources of run-to-run bucket-luck noise (ADR-0003); the other
+# (per-instance ahash seeds) is averaged out by the needle pools in the benches.
 bench: dev
-    uv run pytest --benchmark-min-time=0.5 tests/test_benches.py
+    PYTHONHASHSEED=0 uv run pytest --benchmark-min-time=0.5 tests/test_benches.py
+
+# Save a named baseline (ADR-0003: canonical machine, mains power only)
+bench-save name: dev
+    PYTHONHASHSEED=0 uv run pytest --benchmark-min-time=0.5 --benchmark-save={{name}} tests/test_benches.py
+
+# Compare the current code against a saved baseline (single run, for iteration)
+bench-compare name: dev
+    PYTHONHASHSEED=0 uv run pytest --benchmark-min-time=0.5 --benchmark-compare={{name}} tests/test_benches.py
+
+# Merge verdict: three process runs against a baseline; judge by the median
+# of the three (ADR-0003)
+bench-verdict name: dev
+    PYTHONHASHSEED=0 uv run pytest --benchmark-min-time=0.5 --benchmark-compare={{name}} tests/test_benches.py
+    PYTHONHASHSEED=0 uv run pytest --benchmark-min-time=0.5 --benchmark-compare={{name}} tests/test_benches.py
+    PYTHONHASHSEED=0 uv run pytest --benchmark-min-time=0.5 --benchmark-compare={{name}} tests/test_benches.py
 
 build:
     uv run maturin build --release
