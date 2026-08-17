@@ -127,13 +127,10 @@ mod moka_py {
     /// Without a weigher every entry weighs 1, i.e. capacity = entry count.
     fn compute_weight(
         py: Python,
-        weigher: Option<&Py<PyAny>>,
+        weigher: &Py<PyAny>,
         key: &Py<PyAny>,
         value: &Py<PyAny>,
     ) -> PyResult<u32> {
-        let Some(weigher) = weigher else {
-            return Ok(1);
-        };
         let result = weigher.call1(py, (key, value))?;
         let bound = result.bind(py);
         if !bound.is_instance_of::<PyInt>() {
@@ -285,7 +282,10 @@ mod moka_py {
             ttl: Option<f64>,
             tti: Option<f64>,
         ) -> PyResult<()> {
-            let weight = compute_weight(py, self.weigher.as_ref(), &key, &value)?;
+            let weight = match self.weigher.as_ref() {
+                Some(weigher) => compute_weight(py, weigher, &key, &value)?,
+                None => 1,
+            };
             let hashable_key = AnyKey::new_with_gil(key, py)?;
             let time_to_live = parse_duration(ttl, "ttl")?;
             let time_to_idle = parse_duration(tti, "tti")?;
@@ -309,9 +309,7 @@ mod moka_py {
         ) -> PyResult<Option<Py<PyAny>>> {
             let hashable_key = AnyKey::new_with_gil(key, py)?;
             let value = self.cache.get(&hashable_key);
-            Ok(value
-                .map(|v| v.value.clone_ref(py))
-                .or_else(|| default.map(|v| v.clone_ref(py))))
+            Ok(value.map(|v| v.value.clone_ref(py)).or(default))
         }
 
         #[pyo3(signature = (key, initializer, ttl=None, tti=None))]
@@ -323,16 +321,26 @@ mod moka_py {
             ttl: Option<f64>,
             tti: Option<f64>,
         ) -> PyResult<Py<PyAny>> {
-            let weigher = self.weigher.as_ref().map(|w| w.clone_ref(py));
-            let weigher_key = key.clone_ref(py);
-            let hashable_key = AnyKey::new_with_gil(key, py)?;
+            // Argument validation happens before the hit fast path so that an
+            // invalid ttl/tti raises even when the key is already cached.
             let time_to_live = parse_duration(ttl, "ttl")?;
             let time_to_idle = parse_duration(tti, "tti")?;
+            let hashable_key = AnyKey::new_with_gil(key, py)?;
+            if let Some(v) = self.cache.get(&hashable_key) {
+                return Ok(v.value.clone_ref(py));
+            }
+            let weigher_ctx = self
+                .weigher
+                .as_ref()
+                .map(|w| (w.clone_ref(py), hashable_key.obj.clone_ref(py)));
             py.detach(|| {
                 self.cache.try_get_with(hashable_key, move || {
                     Python::attach(|py| -> PyResult<ValueWrapper> {
                         let v = initializer.call0(py)?;
-                        let weight = compute_weight(py, weigher.as_ref(), &weigher_key, &v)?;
+                        let weight = match &weigher_ctx {
+                            Some((weigher, key)) => compute_weight(py, weigher, key, &v)?,
+                            None => 1,
+                        };
                         Ok(ValueWrapper {
                             value: Arc::new(v),
                             per_entry_ttl: time_to_live,
@@ -356,9 +364,7 @@ mod moka_py {
         ) -> PyResult<Option<Py<PyAny>>> {
             let hashable_key = AnyKey::new_with_gil(key, py)?;
             let removed = self.cache.remove(&hashable_key);
-            Ok(removed
-                .map(|v| v.value.clone_ref(py))
-                .or_else(|| default.map(|v| v.clone_ref(py))))
+            Ok(removed.map(|v| v.value.clone_ref(py)).or(default))
         }
 
         fn clear(&self, py: Python) {
