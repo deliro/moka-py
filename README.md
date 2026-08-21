@@ -354,11 +354,15 @@ events: list[tuple[str, list[int], str]] = []
 moka: Moka[str, list[int]] = Moka(2, eviction_listener=key_evicted, ttl=0.5)
 moka.set("hello", [1, 2, 3])
 moka.set("hello", [3, 2, 1])  # replaced
-moka.set("foo", [4])  # expired
-moka.set("baz", "size")
+moka.set("foo", [4])
 moka.remove("foo")  # explicit
+for i in range(10):
+    moka.set(f"overflow-{i}", [i])  # over capacity, so most of these go away with "size"
+
+# Maintenance is lazy, so ask for it explicitly instead of guessing when it happens
+moka.run_pending_tasks()
 sleep(1.0)
-moka.get("anything")  # this will trigger eviction for expired
+moka.run_pending_tasks()  # whatever survived is past its TTL by now: "expired"
 
 causes = {c for _, _, c in events}
 assert causes == {"size", "expired", "replaced", "explicit"}, events
