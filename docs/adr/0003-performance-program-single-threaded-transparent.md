@@ -86,3 +86,17 @@ unattributable even under this protocol.
   types.
 - README benchmark tables remain a showcase; the regression instrument is the
   saved local baselines.
+
+## Follow-up: 2026-08-21 budget profile
+
+The budget-profile step this ADR mandates was executed; full findings in
+[docs/perf/2026-08-21-op-budget.md](../perf/2026-08-21-op-budget.md).
+Headline: after 54a6fdb the bridge contributes ~7ns of glue plus ~9ns of
+semantically-required Python calls (hash + `__eq__`) to a ~40-50ns moka-core
+read; no double-digit transparent win remains in `src/lib.rs` for `get`/`set`.
+Levers measured and closed: PyO3 argument parsing (~5ns), `Arc<Py>` double
+indirection (~1ns), replacing/dropping the second (ahash) hash pass
+(identity hashing collapses 30-80x on stride-4096 int keys). Open levers,
+each requiring a new decision: the always-installed `expire_after` read tax
+(~5-10ns on a get hit), a sub-threshold batch (skip `Instant::now()` when no
+per-entry ttl/tti), and upstream moka work (read machinery, insert path).
