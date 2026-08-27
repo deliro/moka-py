@@ -53,7 +53,7 @@ wasm-test = [
 dev = [
     { include-group = "ci" },
     "pytest-benchmark == 5.2.3",
-    "ruff==0.16.3",
+    "ruff==0.16.4",
 ]
 
 [tool.uv.dependency-groups]
