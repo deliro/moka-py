@@ -48,12 +48,12 @@ ci = [
 wasm-test = [
     { include-group = "pytest" },
     "pytest-pyodide == 0.59.2",
-    "pytest-httpserver == 1.1.5",
+    "pytest-httpserver==1.2.0",
 ]
 dev = [
     { include-group = "ci" },
-    "pytest-benchmark == 5.2.3",
-    "ruff==0.16.3",
+    "pytest-benchmark==5.3.0",
+    "ruff==0.16.10",
 ]
 
 [tool.uv.dependency-groups]
