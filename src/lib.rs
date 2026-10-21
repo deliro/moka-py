@@ -214,10 +214,39 @@ mod moka_py {
         }
     }
 
+    /// GIL discipline (ADR-0004, #35): moka runs Python from inside its own
+    /// locks (the eviction listener under the evicted key's lock, a key's
+    /// `__eq__` inside the table and the maintenance run), and that Python
+    /// can give the GIL away. A thread that holds the GIL while it waits
+    /// inside moka for such a thread deadlocks the process. So every moka
+    /// call that can wait runs inside `py.detach`: writes always, reads only
+    /// when a listener is installed (see [`Moka::read`]).
     #[pyclass]
     struct Moka {
         cache: Cache<AnyKey, ValueWrapper, ahash::RandomState>,
         weigher: Option<Py<PyAny>>,
+        has_listener: bool,
+    }
+
+    impl Moka {
+        /// Plain cache read.
+        ///
+        /// Without a listener moka's read path never waits for another
+        /// thread: the table read is lock-free, the read buffer is fed with
+        /// `try_send` and discards when full, and the maintenance run is
+        /// entered with `try_lock`. Keeping the GIL is therefore safe and
+        /// saves a detach/attach pair on the hottest operation. With a
+        /// listener, the maintenance run a read may perform takes per-key
+        /// locks that a writer can hold while it waits for the GIL inside
+        /// the listener, so the read must not hold the GIL.
+        #[inline]
+        fn read(&self, py: Python, key: &AnyKey) -> Option<ValueWrapper> {
+            if self.has_listener {
+                py.detach(|| self.cache.get(key))
+            } else {
+                self.cache.get(key)
+            }
+        }
     }
 
     #[pymethods]
@@ -249,6 +278,7 @@ mod moka_py {
                 builder = builder.time_to_idle(time_to_idle);
             }
 
+            let has_listener = eviction_listener.is_some();
             if let Some(listener) = eviction_listener {
                 let listen_fn = move |k: Arc<AnyKey>, v: ValueWrapper, cause: RemovalCause| {
                     Python::attach(|py| {
@@ -265,6 +295,7 @@ mod moka_py {
             Ok(Moka {
                 cache: builder.build_with_hasher(ahash::RandomState::default()),
                 weigher,
+                has_listener,
             })
         }
 
@@ -296,7 +327,10 @@ mod moka_py {
                 created_at: Instant::now(),
                 weight,
             };
-            self.cache.insert(hashable_key, wrapper);
+            // A replace delivers the listener under this key's lock, and a
+            // full write buffer busy-waits on the maintenance run: never
+            // wait inside moka with the GIL held (ADR-0004).
+            py.detach(|| self.cache.insert(hashable_key, wrapper));
             Ok(())
         }
 
@@ -308,7 +342,7 @@ mod moka_py {
             default: Option<Py<PyAny>>,
         ) -> PyResult<Option<Py<PyAny>>> {
             let hashable_key = AnyKey::new_with_gil(key, py)?;
-            let value = self.cache.get(&hashable_key);
+            let value = self.read(py, &hashable_key);
             Ok(value.map(|v| v.value.clone_ref(py)).or(default))
         }
 
@@ -326,7 +360,7 @@ mod moka_py {
             let time_to_live = parse_duration(ttl, "ttl")?;
             let time_to_idle = parse_duration(tti, "tti")?;
             let hashable_key = AnyKey::new_with_gil(key, py)?;
-            if let Some(v) = self.cache.get(&hashable_key) {
+            if let Some(v) = self.read(py, &hashable_key) {
                 return Ok(v.value.clone_ref(py));
             }
             let weigher_ctx = self
@@ -363,7 +397,9 @@ mod moka_py {
             default: Option<Py<PyAny>>,
         ) -> PyResult<Option<Py<PyAny>>> {
             let hashable_key = AnyKey::new_with_gil(key, py)?;
-            let removed = self.cache.remove(&hashable_key);
+            // Same as set(): "explicit" notification under the key lock plus
+            // the write-buffer wait (ADR-0004).
+            let removed = py.detach(|| self.cache.remove(&hashable_key));
             Ok(removed.map(|v| v.value.clone_ref(py)).or(default))
         }
 
