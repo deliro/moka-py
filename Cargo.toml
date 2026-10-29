@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 ahash = "0.8.12"
-pyo3 = "0.29.2"
+pyo3 = "0.30.1"
 moka = { version = "0.12.15", features = ["sync"] }
 
 # mimalloc v3
