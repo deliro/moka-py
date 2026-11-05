@@ -39,21 +39,21 @@ maturin = [
     "maturin == 1.14.1 ; sys_platform != 'linux'",
     "maturin[patchelf] == 1.14.1 ; sys_platform == 'linux'",
 ]
-pytest = ["pytest == 9.1.1", "pytest-cov == 7.1.0"]
+pytest = ["pytest==9.2.0", "pytest-cov == 7.1.0"]
 ci = [
     { include-group = "maturin" },
     { include-group = "pytest" },
-    "pytest-asyncio == 1.4.0",
+    "pytest-asyncio==1.4.1",
 ]
 wasm-test = [
     { include-group = "pytest" },
     "pytest-pyodide == 0.59.2",
-    "pytest-httpserver == 1.1.5",
+    "pytest-httpserver==1.2.0",
 ]
 dev = [
     { include-group = "ci" },
-    "pytest-benchmark == 5.2.3",
-    "ruff==0.16.3",
+    "pytest-benchmark==5.3.0",
+    "ruff==0.17.3",
 ]
 
 [tool.uv.dependency-groups]
